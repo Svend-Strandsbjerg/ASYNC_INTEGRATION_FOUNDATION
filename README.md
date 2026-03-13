@@ -1,63 +1,65 @@
-# AI-First Engineering Repository Foundation
+# ASYNC_INTEGRATION_FOUNDATION
 
-This repository is a **reusable project foundation** for teams that build software with both human engineers and AI agents.
+`ASYNC_INTEGRATION_FOUNDATION` is a reusable technical foundation for building **asynchronous integration and queue-driven workflows** with strong engineering governance.
 
-It is intentionally generic: it provides standards, process guidance, contribution workflows, and CI quality gates without introducing product-specific code.
+It is intentionally business-neutral and transport-neutral. The repository provides architecture, contracts, reference implementations, and process standards for safely developing async integration capabilities with human + AI collaboration.
 
-## Why this foundation exists
+## Repository goals
 
-Many projects fail to scale safely with AI assistance because expectations are implicit or inconsistent. This foundation makes those expectations explicit from day one:
+This foundation is designed to support future use cases without coupling core logic to a single domain:
 
-- Branch-based development (no direct work on `main`)
-- Pull requests as the unit of change and review
-- Documented standards for code, tests, and docs
-- CI checks that validate repository hygiene
-- Human-reviewed merges for production-quality governance
+- Manual staging + commit flows (for example, timesheet commit)
+- Immediate dispatch flows (for example, live swimlane updates)
+- Batch and single-item dispatch
+- Ordered dispatch
+- Retry-aware delivery with status visibility
+- SAP and non-SAP outbound targets through pluggable adapters
 
-## How this supports AI-assisted development
+## Engineering and governance model
 
-This template treats AI agents as first-class contributors while preserving engineering quality:
+This repository preserves the `REPO_FOUNDATION` discipline:
 
-- `AGENTS.md` defines operating rules for AI contributors
-- PR templates require clear scope, test evidence, and risk notes
-- Process docs define a reproducible issue → branch → PR workflow
-- Testing and documentation standards prevent "code-only" changes
+- Branch-based development with PR-first delivery
+- Human review before merge to `main`
+- CI validation and repository hygiene checks
+- Documentation-driven change management
+- Explicit AI agent operating rules in `AGENTS.md`
 
-## How to use this template for future projects
+## Framework scope (current phase)
 
-1. Create a new repository from this foundation.
-2. Update placeholders (CODEOWNERS, support contacts, security policy details, CI language/runtime steps).
-3. Add product code incrementally under agreed project directories.
-4. Keep standards/process documentation up to date as the project evolves.
-5. Protect `main` with required status checks and human review rules.
+The current implementation focuses on **foundation shaping and reference behavior**:
 
-## Development workflow (high level)
+- Queue and queue-item domain/state models
+- Dispatch lifecycle and interface contracts
+- In-memory persistence implementation
+- Mock transport adapter and dispatcher/orchestrator
+- Reference examples for timesheet commit and swimlane immediate dispatch
+- Tests for key state transitions and retry behavior
 
-1. Start from an issue/task with clear scope and acceptance criteria.
-2. Create a short-lived branch.
-3. Implement a small, reviewable change.
-4. Add or update tests and docs as relevant.
-5. Open a pull request using the provided template.
-6. Pass CI checks and complete human review.
-7. Merge into `main` only after approval.
+A full production-grade runtime engine is intentionally out of scope for this first delivery.
 
 ## Repository map
 
-- `ARCHITECTURE.md`: Operating model for source control, CI, review, and quality gates.
-- `AGENTS.md`: Rules for AI agents contributing safely.
-- `CONTRIBUTING.md`: Contribution guide for humans and AI agents.
-- `docs/standards/`: Engineering, testing, and documentation standards.
-- `docs/process/`: Repeatable workflows for development and PR execution.
-- `.github/`: PR template, issue templates, and CI workflows (repository hygiene plus workflow-file validation).
-- `tests/`: Test scaffolding and repository-level validation scripts.
+- `ARCHITECTURE.md`: target framework architecture and phased implementation strategy.
+- `AGENTS.md`: AI contributor operating rules.
+- `CONTRIBUTING.md`: contribution workflow for humans and AI agents.
+- `docs/framework/`: queue model, state model, lifecycle, and extensibility docs.
+- `docs/examples/`: example flow documentation.
+- `src/async_integration_foundation/`: framework contracts and reference implementation.
+- `tests/`: test coverage for foundation behavior.
 
-## Non-goals of this repository
+## Quick start (local)
 
-This foundation intentionally does **not** include:
+```bash
+python -m pytest
+```
 
-- Business/domain logic
-- Product UI/API features
-- Demo application layers
-- Project-specific architecture implementations
+## Non-goals
 
-Those belong in downstream repositories created from this template.
+This repository does **not** currently attempt to:
+
+- Replace enterprise message brokers
+- Deliver production infrastructure/runtime hardening in one step
+- Encode business-specific policies directly in core modules
+
+Instead, it establishes a clear, extensible baseline that future iterations can evolve safely.
