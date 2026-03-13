@@ -8,6 +8,7 @@ This file defines required behavior for AI agents working in this repository and
 - Prefer small, incremental, verifiable changes.
 - Avoid unnecessary complexity and speculative abstractions.
 - Keep changes aligned to the explicit request.
+- Keep framework logic business-neutral and reusable.
 
 ## Branch and source-control rules
 

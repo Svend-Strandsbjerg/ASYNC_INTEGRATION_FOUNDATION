@@ -1,6 +1,15 @@
-# Tests Directory
+# Test Directory
 
-This directory is reserved for repository and project test assets.
+This directory contains repository tests for the async integration framework foundation.
 
-At foundation stage, it can contain repository-level validation scripts and test scaffolding.
-As product code is added, organize tests by language/framework conventions while preserving clear intent and maintainability.
+## Current coverage
+
+- Reference queue dispatch behavior
+- Queue/item state transitions
+- Retry lifecycle behavior
+
+Run tests locally with:
+
+```bash
+python -m pytest
+```

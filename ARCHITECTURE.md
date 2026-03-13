@@ -1,67 +1,102 @@
-# Repository Operating Model
+# ASYNC_INTEGRATION_FOUNDATION Architecture
 
 ## Purpose
 
-This document defines the operating architecture for repositories created from this foundation. It focuses on governance and delivery mechanics rather than product architecture.
+This document defines the target architecture of the async integration foundation and the phased strategy for implementing runtime behavior safely.
 
-## Source of truth
+## Architecture principles
 
-- GitHub is the canonical system for source code, issues, pull requests, and workflow history.
-- `main` represents the latest reviewed, merge-ready state.
-- All non-trivial changes must be traceable to an issue/task/request.
+- Framework first, use case second
+- Explicit state and transitions
+- Pluggable transports and policies
+- Business-neutral core orchestration
+- Observability-ready status tracking
+- Incremental delivery with test-backed changes
 
-## Branch-based development model
+## High-level module structure
 
-- Contributors (human or AI) work in short-lived branches.
-- Direct pushes to `main` are disallowed by policy.
-- Branch names should indicate intent (for example: `docs/ci-foundation`, `chore/update-templates`).
+```text
+src/async_integration_foundation/
+  domain/
+    models.py          # Queue/QueueItem entities and states
+  contracts/
+    persistence.py     # Queue persistence contract
+    dispatcher.py      # Dispatch/orchestrator contract
+    transport.py       # Outbound transport adapter contract
+    mapper.py          # Payload mapping contract
+    policy.py          # Retry and dispatch policy contracts
+  implementations/
+    in_memory.py       # In-memory queue repository
+    mock_transport.py  # Mock outbound adapter
+    orchestrator.py    # Reference dispatcher/orchestrator
+  examples/
+    timesheet.py       # Reference staged commit flow
+    swimlane.py        # Reference immediate dispatch flow
+```
 
-## Pull request workflow
+## Core domain model
 
-- Every change is delivered through a pull request.
-- PRs must explain:
-  - what changed,
-  - why the change is needed,
-  - how it was validated,
-  - risks/assumptions.
-- PRs should remain small and reviewable whenever possible.
+The framework separates queue-level and item-level state to support staged commit, immediate dispatch, and partial failure visibility.
 
-## CI quality gates
+- Queue: lifecycle container for dispatch operations.
+- QueueItem: unit of work sent through adapters.
+- DispatchResult: normalized success/failure output from transport layer.
 
-The CI pipeline should evolve with the repository and typically enforce:
+Detailed definitions live in:
 
-- Repository hygiene checks
-- Standards/lint checks
-- Test execution
-- Any required security or policy checks
+- `docs/framework/queue-model.md`
+- `docs/framework/state-model.md`
+- `docs/framework/dispatch-lifecycle.md`
 
-In this foundation stage, CI focuses on repository structure and documentation integrity. Workflow-file syntax validation is kept in a separate dedicated workflow so CI definitions can be validated independently of the main repository hygiene pipeline. Product-specific build/test jobs are added when product code exists.
+## Dispatch lifecycle (target flow)
 
-## Documentation requirements
+1. Queue is created (`OPEN`).
+2. Items are appended (`NEW`/`STAGED`).
+3. Queue may be paused (`PAUSED`) and resumed (`OPEN`).
+4. Queue is committed (`READY`) for batch dispatch, or item-level dispatch is triggered immediately.
+5. Dispatcher transitions queue to `DISPATCHING` and item(s) to `SENDING`.
+6. Transport adapter returns success/failure.
+7. Retryable failures become `RETRY_WAITING`; non-retryable failures become `FAILED`.
+8. Queue resolves to `COMPLETED`, `PARTIAL_FAILED`, or `FAILED` based on aggregate item status.
 
-Repositories created from this template are documentation-driven:
+## Phase-based implementation strategy
 
-- `README.md` for onboarding and intent
-- `ARCHITECTURE.md` for operating model and key decisions
-- Standards and process docs under `docs/`
-- PR-level documentation updates whenever behavior/process/structure changes
+### Phase 1: Foundation shaping
 
-## Testing requirements
+- Repository identity and architecture docs updated for async integration scope.
+- Module boundaries and contracts documented.
 
-- Logic changes require unit tests.
-- Bug fixes require regression tests where practical.
-- Integration tests are added when components interact across boundaries.
-- Tests must verify behavior and reduce risk, not only increase coverage metrics.
+### Phase 2: Model and contracts
 
-## Human review and merge policy
+- Queue/item state model implemented.
+- Persistence, dispatch, adapter, mapper, and policy interfaces established.
 
-- At least one human reviewer approves before merge to `main`.
-- Required CI checks must pass before merge.
-- Urgent exceptions should be rare, documented, and followed by retrospective cleanup.
+### Phase 3: Reference implementation
 
-## Change management principles
+- In-memory persistence.
+- Mock transport adapter.
+- Mock/reference orchestrator.
+- Example flows and tests.
 
-- Prefer incremental changes over broad rewrites.
-- Make assumptions explicit in PR descriptions.
-- Capture non-obvious tradeoffs in architecture/process docs.
-- Keep templates and standards generic unless intentionally specializing for a specific project.
+### Phase 4: Production runtime evolution
+
+Future iterations can add:
+
+- advanced pause/unpause semantics,
+- ordered dispatch guarantees,
+- richer retry backoff,
+- telemetry hooks,
+- persistence backends,
+- operational controls.
+
+## Governance and workflow architecture
+
+The repository keeps the template governance model:
+
+- branch-based workflow,
+- PR-first change management,
+- CI checks,
+- documented standards and process,
+- human-reviewed merges.
+
+These controls ensure framework evolution remains safe, auditable, and maintainable.
