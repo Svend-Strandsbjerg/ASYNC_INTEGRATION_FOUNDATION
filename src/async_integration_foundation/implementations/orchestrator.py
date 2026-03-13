@@ -28,7 +28,7 @@ class MockDispatcher(Dispatcher):
 
         queue.state = QueueState.DISPATCHING
         for item in queue.items:
-            if item.state in {QueueItemState.READY, QueueItemState.STAGED, QueueItemState.RETRY_WAITING, QueueItemState.NEW}:
+            if self._is_item_dispatchable(item):
                 self._dispatch_item(queue, item)
 
         queue.state = self._aggregate_queue_state(queue)
@@ -38,11 +38,15 @@ class MockDispatcher(Dispatcher):
         queue = self._require_queue(queue_id)
         if queue.state == QueueState.PAUSED:
             return queue
-        queue.state = QueueState.DISPATCHING
 
         item = next((i for i in queue.items if i.id == item_id), None)
         if item is None:
             raise ValueError(f"Queue item not found: {item_id}")
+
+        if not self._is_item_dispatchable(item):
+            return queue
+
+        queue.state = QueueState.DISPATCHING
 
         self._dispatch_item(queue, item)
         queue.state = self._aggregate_queue_state(queue)
@@ -92,3 +96,11 @@ class MockDispatcher(Dispatcher):
         if queue is None:
             raise ValueError(f"Queue not found: {queue_id}")
         return queue
+
+    def _is_item_dispatchable(self, item: QueueItem) -> bool:
+        return item.state in {
+            QueueItemState.READY,
+            QueueItemState.STAGED,
+            QueueItemState.RETRY_WAITING,
+            QueueItemState.NEW,
+        }
