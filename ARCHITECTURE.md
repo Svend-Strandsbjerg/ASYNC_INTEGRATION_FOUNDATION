@@ -2,106 +2,65 @@
 
 ## Purpose
 
-This document defines the target architecture of the async integration foundation and the phased strategy for implementing runtime behavior safely.
+This document defines the target architecture of the async integration foundation.
 
 ## Architecture principles
 
-- Framework first, use case second
-- Explicit state and transitions
-- Pluggable transports and policies
-- Business-neutral core orchestration
-- Observability-ready status tracking
-- Incremental delivery with test-backed changes
+- Framework-first and business-neutral core
+- Explicit queue/item state and lifecycle
+- Stable technical identifiers and clear entity linkage
+- Generic payload contract with adapter-driven mapping
+- Pluggable persistence, transport, and policy boundaries
+- Incremental, test-backed delivery
 
-## High-level module structure
+## Module structure
 
 ```text
 src/async_integration_foundation/
-  domain/
-    models.py          # Queue/QueueItem entities and states
+  domain/models.py
   contracts/
-    persistence.py     # Queue persistence contract + scoped lookup
-    activity.py        # Queue activity log contract
-    dispatcher.py      # Dispatch/orchestrator contract
-    transport.py       # Outbound transport adapter contract
-    mapper.py          # Payload mapping contract
-    policy.py          # Retry and dispatch policy contracts
+    persistence.py
+    activity.py
+    dispatcher.py
+    transport.py
+    mapper.py
+    policy.py
   implementations/
-    in_memory.py       # In-memory queue repository
-    mock_transport.py  # Mock outbound adapter
-    orchestrator.py    # Reference dispatcher/orchestrator
+    in_memory.py
+    queue_services.py
+    orchestrator.py
+    mock_transport.py
   examples/
-    timesheet.py       # Reference staged commit flow
-    swimlane.py        # Reference immediate dispatch flow
+    timesheet.py
+    swimlane.py
 ```
 
-## Core domain model
+## Core model shape
 
-The framework separates queue-level and item-level state to support staged commit, immediate dispatch, and partial failure visibility.
+### Queue
 
-- Queue: lifecycle container for dispatch operations.
-- QueueItem: unit of work sent through adapters.
-- DispatchResult: normalized success/failure output from transport layer.
-- Queue scoping metadata (session/user/context identifiers) for application-level resolution.
-- Queue snapshot read model for inspection-friendly state queries.
-- Lightweight queue activity stream for queue/session inspection.
+Technical identity and queue metadata:
 
-Detailed definitions live in:
+- `queue_id` (technical key)
+- `queue_type`, `queue_state`, `dispatch_mode`
+- scope: `session_id`, `user_id`, `context_type`, `context_id`
+- traceability/reference: `correlation_id`, `business_key`, `external_reference`
+- timestamps and metadata
 
-- `docs/framework/queue-model.md`
-- `docs/framework/state-model.md`
-- `docs/framework/dispatch-lifecycle.md`
-- `docs/framework/queue-inspection.md`
+### QueueItem
 
-## Dispatch lifecycle (target flow)
+Dispatch unit with explicit queue linkage:
 
-1. Queue is created (`OPEN`).
-2. Items are appended (`NEW`/`STAGED`).
-3. Queue may be paused (`PAUSED`) and resumed (`OPEN`).
-4. Queue is committed (`READY`) for batch dispatch, or item-level dispatch is triggered immediately.
-5. Dispatcher transitions queue to `DISPATCHING` and item(s) to `SENDING`.
-6. Transport adapter returns success/failure.
-7. Retryable failures become `RETRY_WAITING`; non-retryable failures become `FAILED`.
-8. Queue resolves to `COMPLETED`, `PARTIAL_FAILED`, or `FAILED` based on aggregate item status.
+- `item_id` (technical key)
+- `queue_id` (parent queue reference)
+- `sequence_number` for deterministic order
+- payload contract: `payload`, `payload_type`, `payload_version`
+- routing metadata: `adapter_key`, `target_system`, `operation`
+- traceability/reference/idempotency metadata
+- retry and attempt tracking fields
 
-## Phase-based implementation strategy
+## Mapping architecture
 
-### Phase 1: Foundation shaping
+Queue items store **generic** payload contracts.
 
-- Repository identity and architecture docs updated for async integration scope.
-- Module boundaries and contracts documented.
-
-### Phase 2: Model and contracts
-
-- Queue/item state model implemented.
-- Persistence, dispatch, adapter, mapper, and policy interfaces established.
-
-### Phase 3: Reference implementation
-
-- In-memory persistence.
-- Mock transport adapter.
-- Mock/reference orchestrator.
-- Example flows and tests.
-
-### Phase 4: Production runtime evolution
-
-Future iterations can add:
-
-- advanced pause/unpause semantics,
-- ordered dispatch guarantees,
-- richer retry backoff,
-- telemetry hooks,
-- persistence backends,
-- operational controls.
-
-## Governance and workflow architecture
-
-The repository keeps the template governance model:
-
-- branch-based workflow,
-- PR-first change management,
-- CI checks,
-- documented standards and process,
-- human-reviewed merges.
-
-These controls ensure framework evolution remains safe, auditable, and maintainable.
+Target-specific request structures are built through `PayloadMapper` + `TransportAdapter` implementations. The domain model intentionally avoids SAP/ServiceNow specific schemas.

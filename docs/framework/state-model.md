@@ -2,33 +2,26 @@
 
 ## Queue states
 
-The framework models queue-level orchestration state explicitly.
-
 - `OPEN`: queue accepts new items.
-- `PAUSED`: queue is temporarily blocked from dispatch.
-- `READY`: queue is committed and ready for dispatch.
-- `DISPATCHING`: queue is actively dispatching items.
-- `COMPLETED`: all items dispatched successfully.
-- `FAILED`: all items failed or queue-level failure.
-- `PARTIAL_FAILED`: mixed success/failure result.
-- `CANCELLED`: queue terminated intentionally.
+- `PAUSED`: queue is blocked from dispatch.
+- `READY`: queue is committed and dispatchable.
+- `DISPATCHING`: queue is actively dispatching.
+- `COMPLETED`: all items sent.
+- `FAILED`: queue-level unsuccessful state.
+- `PARTIAL_FAILED`: mixed item outcomes.
+- `CANCELLED`: intentionally terminated.
 
 ## Queue item states
 
-Each item has independent dispatch state.
+- `NEW`: created.
+- `STAGED`: staged for manual commit.
+- `READY`: eligible for dispatch.
+- `SENDING`: in-flight.
+- `SENT`: successful.
+- `FAILED`: terminal failure.
+- `RETRY_WAITING`: retryable failure.
+- `CANCELLED`: cancelled.
 
-- `NEW`: item created but not staged.
-- `STAGED`: item staged for manual commit flow.
-- `READY`: item eligible for dispatch.
-- `SENDING`: item currently being sent.
-- `SENT`: item successfully sent.
-- `FAILED`: item failed with no retry path.
-- `RETRY_WAITING`: item failed but retry remains possible.
-- `CANCELLED`: item cancelled.
+## Additional state context
 
-## Transition constraints
-
-- Paused queues must not transition to `DISPATCHING` until unpaused.
-- Items in `SENT` are immutable for dispatch operations.
-- Retry transitions from `FAILED` require explicit reset logic.
-- Queue terminal states (`COMPLETED`, `FAILED`, `CANCELLED`) are inspectable and should not silently reopen.
+Queue and item state snapshots now include technical ids (`queue_id`, `item_id`), queue linkage (`queue_id` on item), and `sequence_number` for deterministic ordering.

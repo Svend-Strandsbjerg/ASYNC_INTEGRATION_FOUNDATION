@@ -2,82 +2,59 @@
 
 ## Overview
 
-The queue model defines the core entities used by the async integration foundation.
+The queue model defines enterprise-oriented queue/message entities for generic async integration.
 
-## Entities
+## Queue
 
-### Queue
+`Queue` is the lifecycle container.
 
-A queue represents a logical dispatch container.
+Primary technical identity:
 
-Key fields:
-
-- `id`: queue identifier
-- `name`: logical queue name
-- `state`: queue lifecycle state
-- `dispatch_mode`: manual, immediate, batch, ordered, or single-item mode
-- `created_at` / `updated_at`: timestamps
-- `items`: queue item collection
-- `session_id` / `user_id`: optional application-level scope identifiers
-- `context_type` / `context_id`: optional logical context scoping metadata
-- `metadata`: opaque application-level metadata
-- `is_paused`: convenience property derived from queue state
-
-### QueueItem
-
-A queue item is a single dispatchable work unit.
+- `queue_id` (stable unique technical identifier)
 
 Key fields:
 
-- `id`: item identifier
-- `queue_id`: parent queue
-- `payload`: raw business payload
-- `mapped_payload`: optional transport-specific payload
-- `state`: item lifecycle state
-- `attempt_count`: number of send attempts
-- `max_attempts`: per-item retry budget
-- `last_error`: latest error summary
-- `created_at`: item creation timestamp
-- `last_attempt_at`: latest dispatch attempt timestamp
+- `queue_type`
+- `queue_state`
+- `dispatch_mode`
+- `session_id`, `user_id`
+- `context_type`, `context_id`
+- `correlation_id`
+- `business_key`, `external_reference`
+- `created_at`, `updated_at`, `created_by`
+- `metadata`
+- `is_paused` (derived from state)
 
-### DispatchResult
+## QueueItem
 
-Normalized result from a transport adapter.
+`QueueItem` is a dispatchable unit linked to a queue.
 
-Fields:
+Primary technical identity:
 
-- `success`: boolean
-- `retryable`: whether retry is allowed
-- `external_reference`: optional target reference
-- `error_message`: optional failure details
+- `item_id` (stable unique technical identifier)
 
-### QueueSnapshot
+Explicit queue linkage:
 
-Read-optimized projection for stable queue inspection.
+- `queue_id` (required relationship to parent queue)
 
-Fields include:
+Key fields:
 
-- queue identifiers and scope metadata
-- queue lifecycle/dispatch fields
-- item counters by state category
-- item snapshots with attempt/error/timestamps
-- `last_updated_at`
+- `item_type`, `item_state`
+- `sequence_number` (deterministic ordering)
+- `payload`, `payload_type`, `payload_version`
+- `adapter_key`, `target_system`, `operation`
+- `correlation_id`, `causation_id`, `request_id`
+- `business_key`, `external_reference`
+- `idempotency_key`
+- `attempt_count`, `last_attempt_at`, `last_error`
+- `created_at`, `updated_at`
+- `metadata`
 
-### QueueActivityEvent
+## Separation of concerns
 
-Lightweight queue activity event record for inspection.
-
-Fields include:
-
-- `event_id`
-- `queue_id`
-- `event_type`
-- `occurred_at`
-- optional `session_id`, `item_id`, and `detail`
-
-## Design choices
-
-- Core model does not encode SAP-specific or domain-specific payload structure.
-- State is explicit and inspectable at both queue and item level.
-- Retry metadata is stored on items for clear auditability.
-- Scope metadata is opaque application metadata and does not alter dispatch semantics.
+- `queue_id` / `item_id`: technical identity
+- `business_key` / `external_reference`: domain references
+- `correlation_id` (and related ids): traceability
+- `idempotency_key`: replay/retry safety
+- `payload*`: generic message contract
+- adapter fields: routing/mapping hints

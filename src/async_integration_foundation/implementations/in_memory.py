@@ -13,7 +13,7 @@ class InMemoryQueueRepository(QueueRepository):
         self._queues: dict[str, Queue] = {}
 
     def create_queue(self, queue: Queue) -> Queue:
-        self._queues[queue.id] = queue
+        self._queues[queue.queue_id] = queue
         return queue
 
     def get_queue(self, queue_id: str) -> Queue | None:
@@ -31,7 +31,7 @@ class InMemoryQueueRepository(QueueRepository):
 
     def save_queue(self, queue: Queue) -> Queue:
         queue.updated_at = datetime.now(timezone.utc)
-        self._queues[queue.id] = queue
+        self._queues[queue.queue_id] = queue
         return queue
 
     def list_queues(self) -> list[Queue]:
