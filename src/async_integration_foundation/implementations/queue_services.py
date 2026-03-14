@@ -12,6 +12,7 @@ from async_integration_foundation.domain.models import (
     QueueSnapshot,
     QueueState,
 )
+from async_integration_foundation.domain.state_machine import transition_queue_state
 
 
 class QueueResolver:
@@ -58,11 +59,8 @@ class QueueResolver:
 
     def add_item(self, queue_id: str, item: QueueItem) -> Queue:
         queue = self._require_queue(queue_id)
-        if item.queue_id and item.queue_id != queue.queue_id:
-            raise ValueError(f"Queue item queue_id mismatch: expected {queue.queue_id}, got {item.queue_id}")
-
-        item.queue_id = queue.queue_id
-        item.sequence_number = self._next_sequence_number(queue)
+        if item.sequence_number == 0:
+            item.sequence_number = _next_sequence_number(queue.items)
         queue.items.append(item)
         saved = self.repository.save_queue(queue)
         self._record(saved, QueueActivityType.ITEM_ADDED, item_id=item.item_id)
@@ -70,14 +68,16 @@ class QueueResolver:
 
     def pause_queue(self, queue_id: str) -> Queue:
         queue = self._require_queue(queue_id)
-        queue.state = QueueState.PAUSED
+        queue.pre_pause_state = queue.state
+        transition_queue_state(queue, QueueState.PAUSED)
         saved = self.repository.save_queue(queue)
         self._record(saved, QueueActivityType.QUEUE_PAUSED)
         return saved
 
     def resume_queue(self, queue_id: str) -> Queue:
         queue = self._require_queue(queue_id)
-        queue.state = QueueState.OPEN
+        resume_state = queue.pre_pause_state if queue.pre_pause_state != QueueState.PAUSED else QueueState.OPEN
+        transition_queue_state(queue, resume_state)
         saved = self.repository.save_queue(queue)
         self._record(saved, QueueActivityType.QUEUE_RESUMED)
         return saved
@@ -119,11 +119,15 @@ def build_queue_snapshot(queue: Queue) -> QueueSnapshot:
         dispatch_mode=queue.dispatch_mode.value,
         is_paused=queue.is_paused,
         total_items=len(queue.items),
-        waiting_items=_count_items(queue.items, {QueueItemState.NEW, QueueItemState.STAGED}),
-        ready_items=_count_items(queue.items, {QueueItemState.READY, QueueItemState.RETRY_WAITING}),
-        sending_items=_count_items(queue.items, {QueueItemState.SENDING}),
+        new_items=_count_items(queue.items, {QueueItemState.NEW}),
+        ready_items=_count_items(queue.items, {QueueItemState.READY}),
+        dispatching_items=_count_items(queue.items, {QueueItemState.DISPATCHING}),
         sent_items=_count_items(queue.items, {QueueItemState.SENT}),
         failed_items=_count_items(queue.items, {QueueItemState.FAILED}),
+        retry_waiting_items=_count_items(queue.items, {QueueItemState.RETRY_WAITING}),
+        dead_letter_items=_count_items(queue.items, {QueueItemState.DEAD_LETTER}),
+        has_retry_waiting_items=_count_items(queue.items, {QueueItemState.RETRY_WAITING}) > 0,
+        has_dead_letter_items=_count_items(queue.items, {QueueItemState.DEAD_LETTER}) > 0,
         items=[
             QueueItemSnapshot(
                 item_id=item.item_id,
@@ -144,6 +148,7 @@ def build_queue_snapshot(queue: Queue) -> QueueSnapshot:
                 attempt_count=item.attempt_count,
                 created_at=item.created_at,
                 last_attempt_at=item.last_attempt_at,
+                next_retry_at=item.next_retry_at,
                 last_error=item.last_error,
                 metadata=dict(item.metadata),
             )
@@ -156,3 +161,9 @@ def build_queue_snapshot(queue: Queue) -> QueueSnapshot:
 
 def _count_items(items: list[QueueItem], states: set[QueueItemState]) -> int:
     return len([item for item in items if item.state in states])
+
+
+def _next_sequence_number(items: list[QueueItem]) -> int:
+    if not items:
+        return 1
+    return max(item.sequence_number for item in items) + 1

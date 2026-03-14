@@ -2,26 +2,51 @@
 
 ## Queue states
 
-- `OPEN`: queue accepts new items.
-- `PAUSED`: queue is blocked from dispatch.
-- `READY`: queue is committed and dispatchable.
-- `DISPATCHING`: queue is actively dispatching.
-- `COMPLETED`: all items sent.
-- `FAILED`: queue-level unsuccessful state.
-- `PARTIAL_FAILED`: mixed item outcomes.
-- `CANCELLED`: intentionally terminated.
+The queue lifecycle is intentionally explicit and constrained.
+
+- `OPEN`: queue can accept items and can dispatch eligible items.
+- `PAUSED`: queue can still accept items but dispatch is blocked.
+- `DISPATCHING`: queue is currently dispatching one or more items.
+- `COMPLETED`: queue has no active work left.
+
+Allowed queue transitions:
+
+- `OPEN -> PAUSED`
+- `PAUSED -> OPEN` (or back to the pre-pause active state)
+- `OPEN -> DISPATCHING`
+- `DISPATCHING -> OPEN`
+- `OPEN -> COMPLETED`
+- `PAUSED -> COMPLETED`
 
 ## Queue item states
 
-- `NEW`: created.
-- `STAGED`: staged for manual commit.
-- `READY`: eligible for dispatch.
-- `SENDING`: in-flight.
-- `SENT`: successful.
-- `FAILED`: terminal failure.
-- `RETRY_WAITING`: retryable failure.
-- `CANCELLED`: cancelled.
+Each queue item has its own lifecycle.
 
-## Additional state context
+- `NEW`: item exists but is not dispatchable.
+- `READY`: item is dispatchable.
+- `DISPATCHING`: item is currently being sent.
+- `SENT`: terminal success state.
+- `FAILED`: failed attempt captured before retry/dead-letter routing.
+- `RETRY_WAITING`: waiting for retry eligibility (`next_retry_at`).
+- `DEAD_LETTER`: terminal failure state (no automatic retry).
 
-Queue and item state snapshots now include technical ids (`queue_id`, `item_id`), queue linkage (`queue_id` on item), and `sequence_number` for deterministic ordering.
+Allowed item transitions:
+
+- `NEW -> READY`
+- `READY -> DISPATCHING`
+- `DISPATCHING -> SENT`
+- `DISPATCHING -> FAILED`
+- `FAILED -> RETRY_WAITING`
+- `RETRY_WAITING -> READY`
+- `FAILED -> DEAD_LETTER`
+
+Invalid transitions are rejected by the shared state machine helpers.
+
+## Dispatchability rules
+
+Dispatchability is centralized and deterministic:
+
+- dispatchable: `READY`
+- non-dispatchable: `NEW`, `DISPATCHING`, `SENT`, `FAILED`, `RETRY_WAITING`, `DEAD_LETTER`
+
+Queue dispatch selects eligible items in ascending `sequence_number` order.

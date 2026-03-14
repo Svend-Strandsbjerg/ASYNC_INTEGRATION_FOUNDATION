@@ -2,21 +2,30 @@
 
 ## Core extension points
 
-- `QueueRepository`: persistence abstraction for queue/item state and lookup.
-- `QueueActivityLog`: queue/session activity stream abstraction.
-- `Dispatcher`: dispatch orchestration boundary.
-- `TransportAdapter`: outbound integration boundary.
-- `PayloadMapper`: transforms generic payload contracts.
-- `RetryPolicy` / `DispatchPolicy`: pluggable behavior controls.
+- `QueueRepository`: queue persistence and scoped lookup.
+- `QueueActivityLog`: inspection-friendly event stream.
+- `Dispatcher`: queue/item dispatch orchestration.
+- `TransportAdapter`: outbound delivery abstraction.
+- `PayloadMapper`: payload transformation boundary.
+- `RetryPolicy`: retry eligibility decision.
 
-## Generic payload + adapter mapping
+## State-machine extensibility
 
-Core queue items store generic payload contracts (`payload`, `payload_type`, `payload_version`).
+State transitions and dispatchability are centralized in the domain state machine helpers.
 
-Adapters and payload mappers transform those generic contracts into target-specific requests. This keeps framework domain models business-neutral and target-neutral.
+This allows extensions to stay consistent:
 
-## Metadata extensibility
+- custom dispatchers can reuse transition validation
+- retry coordinators can promote `RETRY_WAITING -> READY` in one place
+- future replay tooling can intentionally handle `DEAD_LETTER`
 
-Both `Queue` and `QueueItem` support optional opaque `metadata` fields.
+## Retry/dead-letter extension hooks
 
-Implementations should preserve metadata safely and avoid aliasing when creating objects from caller-provided dictionaries.
+The model already supports enterprise retry evolution without transport coupling:
+
+- `max_attempts`
+- `next_retry_at`
+- optional `retry_policy_key`
+- terminal `DEAD_LETTER` state
+
+Future schedulers/backoff strategies can be layered on top without changing payload contracts.

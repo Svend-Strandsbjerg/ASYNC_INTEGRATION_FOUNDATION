@@ -1,60 +1,40 @@
 # Queue Model
 
-## Overview
-
-The queue model defines enterprise-oriented queue/message entities for generic async integration.
-
 ## Queue
 
-`Queue` is the lifecycle container.
+Queue fields include:
 
-Primary technical identity:
-
-- `queue_id` (stable unique technical identifier)
-
-Key fields:
-
-- `queue_type`
-- `queue_state`
-- `dispatch_mode`
-- `session_id`, `user_id`
-- `context_type`, `context_id`
-- `correlation_id`
-- `business_key`, `external_reference`
-- `created_at`, `updated_at`, `created_by`
+- `id`, `name`, `dispatch_mode`, `state`
+- `items`
+- `session_id`, `user_id`, `context_type`, `context_id`
 - `metadata`
-- `is_paused` (derived from state)
+- `pre_pause_state` (supports pause/resume semantics)
+- `created_at`, `updated_at`
 
 ## QueueItem
 
-`QueueItem` is a dispatchable unit linked to a queue.
+Queue item fields include:
 
-Primary technical identity:
+- `id`, `queue_id`
+- `payload`, `mapped_payload`
+- `state`
+- `sequence_number` (deterministic dispatch ordering)
+- `attempt_count`, `max_attempts`
+- `next_retry_at`, `retry_policy_key`
+- `last_error`, `created_at`, `last_attempt_at`
 
-- `item_id` (stable unique technical identifier)
+## QueueSnapshot
 
-Explicit queue linkage:
+Queue snapshots expose queue/item lifecycle visibility with explicit counters:
 
-- `queue_id` (required relationship to parent queue)
+- `new_items`
+- `ready_items`
+- `dispatching_items`
+- `sent_items`
+- `failed_items`
+- `retry_waiting_items`
+- `dead_letter_items`
+- `has_retry_waiting_items`
+- `has_dead_letter_items`
 
-Key fields:
-
-- `item_type`, `item_state`
-- `sequence_number` (deterministic ordering)
-- `payload`, `payload_type`, `payload_version`
-- `adapter_key`, `target_system`, `operation`
-- `correlation_id`, `causation_id`, `request_id`
-- `business_key`, `external_reference`
-- `idempotency_key`
-- `attempt_count`, `last_attempt_at`, `last_error`
-- `created_at`, `updated_at`
-- `metadata`
-
-## Separation of concerns
-
-- `queue_id` / `item_id`: technical identity
-- `business_key` / `external_reference`: domain references
-- `correlation_id` (and related ids): traceability
-- `idempotency_key`: replay/retry safety
-- `payload*`: generic message contract
-- adapter fields: routing/mapping hints
+This read model is intended for inspection/monitoring use cases.

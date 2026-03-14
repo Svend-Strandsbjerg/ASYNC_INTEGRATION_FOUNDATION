@@ -15,6 +15,13 @@ from async_integration_foundation.domain.models import (
     QueueItemState,
     QueueState,
 )
+from async_integration_foundation.domain.state_machine import (
+    derive_queue_post_dispatch_state,
+    is_item_dispatchable,
+    is_retry_due,
+    transition_item_state,
+    transition_queue_state,
+)
 
 
 class MockDispatcher(Dispatcher):
@@ -37,13 +44,13 @@ class MockDispatcher(Dispatcher):
         if queue.state == QueueState.PAUSED:
             return queue
 
-        queue.state = QueueState.DISPATCHING
+        transition_queue_state(queue, QueueState.DISPATCHING)
         self._record_activity(queue, QueueActivityType.DISPATCH_STARTED)
-        for item in queue.items:
-            if self._is_item_dispatchable(item):
+        for item in sorted(queue.items, key=lambda candidate: (candidate.sequence_number, candidate.id)):
+            if is_item_dispatchable(item):
                 self._dispatch_item(queue, item)
 
-        queue.state = self._aggregate_queue_state(queue)
+        transition_queue_state(queue, derive_queue_post_dispatch_state(queue))
         self._record_dispatch_outcome(queue)
         return self.repository.save_queue(queue)
 
@@ -56,26 +63,32 @@ class MockDispatcher(Dispatcher):
         if item is None:
             raise ValueError(f"Queue item not found: {item_id}")
 
-        if not self._is_item_dispatchable(item):
+        if not is_item_dispatchable(item):
             return queue
 
-        queue.state = QueueState.DISPATCHING
-        self._record_activity(queue, QueueActivityType.DISPATCH_STARTED, item_id=item.item_id)
+        transition_queue_state(queue, QueueState.DISPATCHING)
+        self._record_activity(queue, QueueActivityType.DISPATCH_STARTED, item_id=item.id)
 
         self._dispatch_item(queue, item)
-        queue.state = self._aggregate_queue_state(queue)
+        transition_queue_state(queue, derive_queue_post_dispatch_state(queue))
         self._record_dispatch_outcome(queue)
         return self.repository.save_queue(queue)
 
     def retry_failed_items(self, queue_id: str) -> Queue:
         queue = self._require_queue(queue_id)
+        now = datetime.now(timezone.utc)
         for item in queue.items:
-            if item.state in {QueueItemState.RETRY_WAITING, QueueItemState.FAILED} and self.retry_policy.can_retry(item):
-                item.state = QueueItemState.READY
+            if item.state == QueueItemState.FAILED and self.retry_policy.can_retry(item):
+                transition_item_state(item, QueueItemState.RETRY_WAITING)
+                if item.next_retry_at is None:
+                    item.next_retry_at = now
+            if is_retry_due(item, now=now):
+                transition_item_state(item, QueueItemState.READY)
+                item.next_retry_at = None
         return self.dispatch_queue(queue_id)
 
     def _dispatch_item(self, queue: Queue, item: QueueItem) -> None:
-        item.state = QueueItemState.SENDING
+        transition_item_state(item, QueueItemState.DISPATCHING)
         item.attempt_count += 1
         item.last_attempt_at = datetime.now(timezone.utc)
         item.updated_at = item.last_attempt_at
@@ -83,47 +96,26 @@ class MockDispatcher(Dispatcher):
         result = self.transport.send(item.mapped_payload)
 
         if result.success:
-            item.state = QueueItemState.SENT
+            transition_item_state(item, QueueItemState.SENT)
             item.last_error = None
-            item.updated_at = datetime.now(timezone.utc)
-            self._record_activity(queue, QueueActivityType.ITEM_SENT, item_id=item.item_id)
+            item.next_retry_at = None
+            self._record_activity(queue, QueueActivityType.ITEM_SENT, item_id=item.id)
             return
 
         item.last_error = result.error_message
-        item.updated_at = datetime.now(timezone.utc)
+        transition_item_state(item, QueueItemState.FAILED)
         if result.retryable and self.retry_policy.can_retry(item):
-            item.state = QueueItemState.RETRY_WAITING
+            transition_item_state(item, QueueItemState.RETRY_WAITING)
+            item.next_retry_at = datetime.now(timezone.utc)
             return
 
-        item.state = QueueItemState.FAILED
-
-    def _aggregate_queue_state(self, queue: Queue) -> QueueState:
-        item_states = {item.state for item in queue.items}
-        if not item_states:
-            return QueueState.OPEN
-        if item_states == {QueueItemState.SENT}:
-            return QueueState.COMPLETED
-        if item_states.issubset({QueueItemState.FAILED, QueueItemState.RETRY_WAITING}):
-            return QueueState.FAILED
-        if QueueItemState.FAILED in item_states or QueueItemState.RETRY_WAITING in item_states:
-            return QueueState.PARTIAL_FAILED
-        if QueueItemState.SENDING in item_states:
-            return QueueState.DISPATCHING
-        return QueueState.READY
+        transition_item_state(item, QueueItemState.DEAD_LETTER)
 
     def _require_queue(self, queue_id: str) -> Queue:
         queue = self.repository.get_queue(queue_id)
         if queue is None:
             raise ValueError(f"Queue not found: {queue_id}")
         return queue
-
-    def _is_item_dispatchable(self, item: QueueItem) -> bool:
-        return item.state in {
-            QueueItemState.READY,
-            QueueItemState.STAGED,
-            QueueItemState.RETRY_WAITING,
-            QueueItemState.NEW,
-        }
 
     def _record_activity(self, queue: Queue, event_type: QueueActivityType, item_id: str | None = None) -> None:
         if self.activity_log is None:
@@ -136,7 +128,11 @@ class MockDispatcher(Dispatcher):
         )
 
     def _record_dispatch_outcome(self, queue: Queue) -> None:
-        if queue.state == QueueState.COMPLETED:
-            self._record_activity(queue, QueueActivityType.DISPATCH_COMPLETED)
-        elif queue.state in {QueueState.PARTIAL_FAILED, QueueState.FAILED}:
+        has_failure_outcome = any(
+            item.state in {QueueItemState.FAILED, QueueItemState.RETRY_WAITING, QueueItemState.DEAD_LETTER}
+            for item in queue.items
+        )
+        if has_failure_outcome:
             self._record_activity(queue, QueueActivityType.DISPATCH_FAILED)
+        elif queue.state == QueueState.COMPLETED:
+            self._record_activity(queue, QueueActivityType.DISPATCH_COMPLETED)

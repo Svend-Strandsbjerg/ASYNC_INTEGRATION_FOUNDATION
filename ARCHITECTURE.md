@@ -1,66 +1,40 @@
 # ASYNC_INTEGRATION_FOUNDATION Architecture
 
-## Purpose
+## Principles
 
-This document defines the target architecture of the async integration foundation.
+- Framework-level and business-neutral
+- Explicit state machines at queue and item levels
+- Centralized transition validation and dispatchability logic
+- Deterministic dispatch ordering
+- Retry/dead-letter readiness without transport lock-in
 
-## Architecture principles
+## Core lifecycle
 
-- Framework-first and business-neutral core
-- Explicit queue/item state and lifecycle
-- Stable technical identifiers and clear entity linkage
-- Generic payload contract with adapter-driven mapping
-- Pluggable persistence, transport, and policy boundaries
-- Incremental, test-backed delivery
+1. Queue starts in `OPEN`.
+2. Items are created as `NEW` and promoted to `READY` when dispatchable.
+3. Queue may move to `PAUSED`; dispatch is blocked while paused.
+4. Dispatch transitions queue to `DISPATCHING` and items `READY -> DISPATCHING`.
+5. Successful send: `DISPATCHING -> SENT`.
+6. Failed send: `DISPATCHING -> FAILED`, then either:
+   - `FAILED -> RETRY_WAITING` (with `next_retry_at`), or
+   - `FAILED -> DEAD_LETTER`.
+7. Retry preparation promotes `RETRY_WAITING -> READY` when due.
+8. Queue resolves to `COMPLETED` when no active work remains; otherwise `OPEN`.
 
-## Module structure
+## Module layout
 
 ```text
 src/async_integration_foundation/
-  domain/models.py
+  domain/
+    models.py
+    state_machine.py
   contracts/
-    persistence.py
-    activity.py
-    dispatcher.py
-    transport.py
-    mapper.py
-    policy.py
   implementations/
-    in_memory.py
-    queue_services.py
-    orchestrator.py
-    mock_transport.py
   examples/
-    timesheet.py
-    swimlane.py
 ```
 
-## Core model shape
+## Validation and safety
 
-### Queue
-
-Technical identity and queue metadata:
-
-- `queue_id` (technical key)
-- `queue_type`, `queue_state`, `dispatch_mode`
-- scope: `session_id`, `user_id`, `context_type`, `context_id`
-- traceability/reference: `correlation_id`, `business_key`, `external_reference`
-- timestamps and metadata
-
-### QueueItem
-
-Dispatch unit with explicit queue linkage:
-
-- `item_id` (technical key)
-- `queue_id` (parent queue reference)
-- `sequence_number` for deterministic order
-- payload contract: `payload`, `payload_type`, `payload_version`
-- routing metadata: `adapter_key`, `target_system`, `operation`
-- traceability/reference/idempotency metadata
-- retry and attempt tracking fields
-
-## Mapping architecture
-
-Queue items store **generic** payload contracts.
-
-Target-specific request structures are built through `PayloadMapper` + `TransportAdapter` implementations. The domain model intentionally avoids SAP/ServiceNow specific schemas.
+- Invalid queue/item transitions raise errors.
+- Dispatch eligibility is defined once and reused by queue/item/retry paths.
+- Snapshot read models provide state-distribution visibility for operations.

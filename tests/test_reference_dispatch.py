@@ -1,3 +1,5 @@
+from datetime import datetime, timedelta, timezone
+
 from async_integration_foundation.contracts.mapper import IdentityPayloadMapper
 from async_integration_foundation.contracts.policy import MaxAttemptsRetryPolicy
 from async_integration_foundation.domain.models import QueueItemState, QueueState
@@ -27,7 +29,7 @@ def test_timesheet_commit_dispatch_success() -> None:
     resolved = dispatcher.dispatch_queue(queue.queue_id)
 
     assert resolved.state == QueueState.COMPLETED
-    assert all(item.state.value == "SENT" for item in resolved.items)
+    assert all(item.state == QueueItemState.SENT for item in resolved.items)
 
 
 def test_swimlane_immediate_dispatch_success() -> None:
@@ -38,7 +40,7 @@ def test_swimlane_immediate_dispatch_success() -> None:
     resolved = dispatcher.dispatch_item(queue.queue_id, "card-1")
 
     assert resolved.state == QueueState.COMPLETED
-    assert resolved.items[0].state.value == "SENT"
+    assert resolved.items[0].state == QueueItemState.SENT
 
 
 def test_dispatch_item_unknown_id_does_not_mutate_queue_state_or_dispatch() -> None:
@@ -59,7 +61,7 @@ def test_dispatch_item_unknown_id_does_not_mutate_queue_state_or_dispatch() -> N
     assert persisted is not None
     assert persisted.state == original_state
     assert all(item.attempt_count == 0 for item in persisted.items)
-    assert all(item.state == QueueItemState.STAGED for item in persisted.items)
+    assert all(item.state == QueueItemState.READY for item in persisted.items)
     assert transport.sent_payloads == []
 
 
@@ -83,7 +85,7 @@ def test_dispatch_item_only_target_dispatchable_item_is_mutated() -> None:
     transport = MockTransportAdapter()
     repo, dispatcher = _build_dispatcher(transport)
     queue = build_timesheet_commit_queue()
-    queue.items[1].state = QueueItemState.CANCELLED
+    queue.items[1].state = QueueItemState.DEAD_LETTER
     repo.create_queue(queue)
 
     resolved = dispatcher.dispatch_item(queue.queue_id, "ts-1")
@@ -92,42 +94,69 @@ def test_dispatch_item_only_target_dispatchable_item_is_mutated() -> None:
     untouched = next(item for item in resolved.items if item.item_id == "ts-2")
     assert sent.state == QueueItemState.SENT
     assert sent.attempt_count == 1
-    assert untouched.state == QueueItemState.CANCELLED
+    assert untouched.state == QueueItemState.DEAD_LETTER
     assert untouched.attempt_count == 0
     assert transport.sent_payloads == [{"id": "ts-1", "hours": 8}]
 
 
-def test_retry_waiting_then_fail_when_attempt_budget_exhausted() -> None:
+def test_retry_waiting_then_dead_letter_when_attempt_budget_exhausted() -> None:
     transport = MockTransportAdapter(fail_payload_keys={"ts-1"}, retryable=True)
     repo, dispatcher = _build_dispatcher(transport)
     queue = build_timesheet_commit_queue()
+    queue.items[0].max_attempts = 2
     repo.create_queue(queue)
 
-    first = dispatcher.dispatch_queue(queue.queue_id)
-    ts1 = [item for item in first.items if item.item_id == "ts-1"][0]
-    assert ts1.state.value == "RETRY_WAITING"
-    assert first.state == QueueState.PARTIAL_FAILED
+    first = dispatcher.dispatch_queue(queue.id)
+    ts1 = [item for item in first.items if item.id == "ts-1"][0]
+    assert ts1.state == QueueItemState.RETRY_WAITING
+    assert ts1.next_retry_at is not None
+    assert first.state == QueueState.OPEN
 
-    second = dispatcher.retry_failed_items(queue.queue_id)
-    ts1_second = [item for item in second.items if item.item_id == "ts-1"][0]
-    assert ts1_second.state.value == "RETRY_WAITING"
-
-    third = dispatcher.retry_failed_items(queue.queue_id)
-    ts1_third = [item for item in third.items if item.item_id == "ts-1"][0]
-    assert ts1_third.state.value == "FAILED"
-    assert third.state == QueueState.PARTIAL_FAILED
+    second = dispatcher.retry_failed_items(queue.id)
+    ts1_second = [item for item in second.items if item.id == "ts-1"][0]
+    assert ts1_second.state == QueueItemState.DEAD_LETTER
 
 
-def test_payload_and_routing_fields_are_preserved_on_dispatch() -> None:
-    repo, dispatcher = _build_dispatcher(MockTransportAdapter())
+def test_retry_waiting_is_not_dispatchable_directly() -> None:
+    transport = MockTransportAdapter()
+    repo, dispatcher = _build_dispatcher(transport)
+    queue = build_swimlane_immediate_queue()
+    queue.items[0].state = QueueItemState.RETRY_WAITING
+    queue.items[0].next_retry_at = datetime.now(timezone.utc) + timedelta(minutes=5)
+    repo.create_queue(queue)
+
+    resolved = dispatcher.dispatch_queue(queue.id)
+
+    assert resolved.items[0].state == QueueItemState.RETRY_WAITING
+    assert transport.sent_payloads == []
+
+
+def test_only_ready_items_are_dispatched_in_sequence_number_order() -> None:
+    transport = MockTransportAdapter()
+    repo, dispatcher = _build_dispatcher(transport)
+    queue = build_timesheet_commit_queue()
+    queue.items[0].sequence_number = 10
+    queue.items[1].sequence_number = 2
+    queue.items[0].state = QueueItemState.READY
+    queue.items[1].state = QueueItemState.NEW
+    repo.create_queue(queue)
+
+    dispatcher.dispatch_queue(queue.id)
+
+    assert transport.sent_payloads == [{"id": "ts-1", "hours": 8}]
+
+
+def test_non_dispatchable_states_cannot_dispatch() -> None:
+    transport = MockTransportAdapter()
+    repo, dispatcher = _build_dispatcher(transport)
     queue = build_swimlane_immediate_queue()
     repo.create_queue(queue)
 
-    resolved = dispatcher.dispatch_item(queue.queue_id, "card-1")
-    item = resolved.items[0]
-
-    assert item.payload_type == "swimlane.move"
-    assert item.payload_version == "1.0"
-    assert item.adapter_key == "rest_api"
-    assert item.target_system == "workflow_board"
-    assert item.operation == "UPDATE"
+    for state in [QueueItemState.NEW, QueueItemState.SENT, QueueItemState.DEAD_LETTER, QueueItemState.RETRY_WAITING]:
+        queue.items[0].state = state
+        queue.items[0].attempt_count = 0
+        transport.sent_payloads.clear()
+        resolved = dispatcher.dispatch_item(queue.id, "card-1")
+        assert resolved.items[0].state == state
+        assert resolved.items[0].attempt_count == 0
+        assert transport.sent_payloads == []

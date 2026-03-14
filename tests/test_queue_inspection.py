@@ -62,18 +62,14 @@ def test_queue_snapshot_contains_read_model_fields() -> None:
             item_id="item-1",
             queue_id=queue.queue_id,
             payload={"id": "item-1", "label": "Approve"},
-            payload_type="workflow.action",
-            payload_version="1.0",
-            adapter_key="rest_api",
-            target_system="workflow_engine",
-            operation="POST",
-            business_key="work-order-4711",
-            idempotency_key="idem-1",
-            item_state=QueueItemState.STAGED,
+            state=QueueItemState.NEW,
         ),
     )
     saved = repo.get_queue(queue.queue_id)
     assert saved is not None
+
+    saved.items.append(QueueItem(id="item-2", queue_id=queue.id, payload={"id": "item-2"}, state=QueueItemState.RETRY_WAITING))
+    saved.items.append(QueueItem(id="item-3", queue_id=queue.id, payload={"id": "item-3"}, state=QueueItemState.DEAD_LETTER))
 
     snapshot = build_queue_snapshot(saved)
 
@@ -83,11 +79,12 @@ def test_queue_snapshot_contains_read_model_fields() -> None:
     assert snapshot.user_id == "user-7"
     assert snapshot.context_type == "workflow"
     assert snapshot.context_id == "4711"
-    assert snapshot.correlation_id == "corr-4711"
-    assert snapshot.business_key == "work-order-4711"
-    assert snapshot.external_reference == "ext-4711"
-    assert snapshot.total_items == 1
-    assert snapshot.waiting_items == 1
+    assert snapshot.total_items == 3
+    assert snapshot.new_items == 1
+    assert snapshot.retry_waiting_items == 1
+    assert snapshot.dead_letter_items == 1
+    assert snapshot.has_retry_waiting_items is True
+    assert snapshot.has_dead_letter_items is True
     assert snapshot.items[0].item_id == "item-1"
     assert snapshot.items[0].queue_id == queue.queue_id
     assert snapshot.items[0].sequence_number == 1
@@ -97,6 +94,29 @@ def test_queue_snapshot_contains_read_model_fields() -> None:
     assert snapshot.items[0].operation == "POST"
     assert snapshot.items[0].idempotency_key == "idem-1"
     assert snapshot.items[0].display_name == "item-1"
+
+
+def test_pause_blocks_dispatch_but_add_item_is_allowed() -> None:
+    repo = InMemoryQueueRepository()
+    resolver = QueueResolver(repository=repo)
+    queue = resolver.get_or_create_queue("s-1", "workflow", "4711", DispatchMode.IMMEDIATE)
+    resolver.add_item(queue.id, QueueItem(id="item-1", queue_id=queue.id, payload={"id": "item-1"}, state=QueueItemState.READY))
+
+    paused = resolver.pause_queue(queue.id)
+    assert paused.state == QueueState.PAUSED
+
+    resolver.add_item(queue.id, QueueItem(id="item-2", queue_id=queue.id, payload={"id": "item-2"}, state=QueueItemState.NEW))
+
+    dispatcher = MockDispatcher(
+        repository=repo,
+        transport=MockTransportAdapter(),
+        mapper=IdentityPayloadMapper(),
+        retry_policy=MaxAttemptsRetryPolicy(),
+    )
+
+    resolved = dispatcher.dispatch_queue(queue.id)
+    assert resolved.state == QueueState.PAUSED
+    assert resolved.items[0].state == QueueItemState.READY
 
 
 def test_activity_log_records_queue_actions_and_dispatch_events() -> None:
@@ -147,7 +167,8 @@ def test_activity_log_records_dispatch_failure() -> None:
     )
     resolved = dispatcher.dispatch_queue(queue.queue_id)
 
-    assert resolved.state in {QueueState.FAILED, QueueState.PARTIAL_FAILED}
+    assert resolved.state == QueueState.COMPLETED
+    assert resolved.items[0].state == QueueItemState.DEAD_LETTER
     event_types = [event.event_type.value for event in activity.list_for_session("s-1")]
     assert "dispatch_failed" in event_types
 
