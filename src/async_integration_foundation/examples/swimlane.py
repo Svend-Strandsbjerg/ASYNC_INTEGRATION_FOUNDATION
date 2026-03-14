@@ -4,13 +4,24 @@ from async_integration_foundation.domain.models import DispatchMode, Queue, Queu
 
 
 def build_swimlane_immediate_queue(queue_id: str = "swimlane-q") -> Queue:
-    queue = Queue(id=queue_id, name="swimlane-live-update", dispatch_mode=DispatchMode.IMMEDIATE)
+    queue = Queue(
+        queue_id=queue_id,
+        queue_type="swimlane-live-update",
+        dispatch_mode=DispatchMode.IMMEDIATE,
+        correlation_id="corr-swimlane-update",
+    )
     queue.items.append(
         QueueItem(
-            id="card-1",
-            queue_id=queue.id,
+            item_id="card-1",
+            queue_id=queue.queue_id,
+            sequence_number=1,
             payload={"id": "card-1", "from": "todo", "to": "in-progress"},
-            state=QueueItemState.READY,
+            payload_type="swimlane.move",
+            payload_version="1.0",
+            adapter_key="rest_api",
+            target_system="workflow_board",
+            operation="UPDATE",
+            item_state=QueueItemState.READY,
         )
     )
     return queue

@@ -59,7 +59,7 @@ class MockDispatcher(Dispatcher):
         if queue.state == QueueState.PAUSED:
             return queue
 
-        item = next((i for i in queue.items if i.id == item_id), None)
+        item = next((i for i in queue.items if i.item_id == item_id), None)
         if item is None:
             raise ValueError(f"Queue item not found: {item_id}")
 
@@ -91,6 +91,7 @@ class MockDispatcher(Dispatcher):
         transition_item_state(item, QueueItemState.DISPATCHING)
         item.attempt_count += 1
         item.last_attempt_at = datetime.now(timezone.utc)
+        item.updated_at = item.last_attempt_at
         item.mapped_payload = self.mapper.map_payload(item.payload)
         result = self.transport.send(item.mapped_payload)
 
@@ -120,7 +121,7 @@ class MockDispatcher(Dispatcher):
         if self.activity_log is None:
             return
         self.activity_log.record(
-            queue_id=queue.id,
+            queue_id=queue.queue_id,
             session_id=queue.session_id,
             event_type=event_type,
             item_id=item_id,

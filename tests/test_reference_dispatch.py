@@ -26,7 +26,7 @@ def test_timesheet_commit_dispatch_success() -> None:
     queue = build_timesheet_commit_queue()
     repo.create_queue(queue)
 
-    resolved = dispatcher.dispatch_queue(queue.id)
+    resolved = dispatcher.dispatch_queue(queue.queue_id)
 
     assert resolved.state == QueueState.COMPLETED
     assert all(item.state == QueueItemState.SENT for item in resolved.items)
@@ -37,7 +37,7 @@ def test_swimlane_immediate_dispatch_success() -> None:
     queue = build_swimlane_immediate_queue()
     repo.create_queue(queue)
 
-    resolved = dispatcher.dispatch_item(queue.id, "card-1")
+    resolved = dispatcher.dispatch_item(queue.queue_id, "card-1")
 
     assert resolved.state == QueueState.COMPLETED
     assert resolved.items[0].state == QueueItemState.SENT
@@ -52,12 +52,12 @@ def test_dispatch_item_unknown_id_does_not_mutate_queue_state_or_dispatch() -> N
     original_state = queue.state
 
     try:
-        dispatcher.dispatch_item(queue.id, "missing-item")
+        dispatcher.dispatch_item(queue.queue_id, "missing-item")
         assert False, "Expected ValueError for unknown queue item"
     except ValueError as error:
         assert "Queue item not found" in str(error)
 
-    persisted = repo.get_queue(queue.id)
+    persisted = repo.get_queue(queue.queue_id)
     assert persisted is not None
     assert persisted.state == original_state
     assert all(item.attempt_count == 0 for item in persisted.items)
@@ -73,7 +73,7 @@ def test_dispatch_item_sent_item_is_rejected_without_mutation() -> None:
     queue.state = QueueState.COMPLETED
     repo.create_queue(queue)
 
-    resolved = dispatcher.dispatch_item(queue.id, "card-1")
+    resolved = dispatcher.dispatch_item(queue.queue_id, "card-1")
 
     assert resolved.state == QueueState.COMPLETED
     assert resolved.items[0].state == QueueItemState.SENT
@@ -88,10 +88,10 @@ def test_dispatch_item_only_target_dispatchable_item_is_mutated() -> None:
     queue.items[1].state = QueueItemState.DEAD_LETTER
     repo.create_queue(queue)
 
-    resolved = dispatcher.dispatch_item(queue.id, "ts-1")
+    resolved = dispatcher.dispatch_item(queue.queue_id, "ts-1")
 
-    sent = next(item for item in resolved.items if item.id == "ts-1")
-    untouched = next(item for item in resolved.items if item.id == "ts-2")
+    sent = next(item for item in resolved.items if item.item_id == "ts-1")
+    untouched = next(item for item in resolved.items if item.item_id == "ts-2")
     assert sent.state == QueueItemState.SENT
     assert sent.attempt_count == 1
     assert untouched.state == QueueItemState.DEAD_LETTER
