@@ -32,6 +32,8 @@ The current implementation focuses on **foundation shaping and reference behavio
 - Queue and queue-item domain/state models
 - Dispatch lifecycle and interface contracts
 - In-memory persistence implementation
+- Scoped queue lookup and queue resolution helper APIs
+- Queue snapshot read model and lightweight activity logging
 - Mock transport adapter and dispatcher/orchestrator
 - Reference examples for timesheet commit and swimlane immediate dispatch
 - Tests for key state transitions and retry behavior
@@ -43,7 +45,7 @@ A full production-grade runtime engine is intentionally out of scope for this fi
 - `ARCHITECTURE.md`: target framework architecture and phased implementation strategy.
 - `AGENTS.md`: AI contributor operating rules.
 - `CONTRIBUTING.md`: contribution workflow for humans and AI agents.
-- `docs/framework/`: queue model, state model, lifecycle, and extensibility docs.
+- `docs/framework/`: queue model, state model, lifecycle, extensibility, and inspection docs.
 - `docs/examples/`: example flow documentation.
 - `src/async_integration_foundation/`: framework contracts and reference implementation.
 - `tests/`: test coverage for foundation behavior.

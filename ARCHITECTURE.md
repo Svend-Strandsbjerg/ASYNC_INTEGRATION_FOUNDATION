@@ -20,7 +20,8 @@ src/async_integration_foundation/
   domain/
     models.py          # Queue/QueueItem entities and states
   contracts/
-    persistence.py     # Queue persistence contract
+    persistence.py     # Queue persistence contract + scoped lookup
+    activity.py        # Queue activity log contract
     dispatcher.py      # Dispatch/orchestrator contract
     transport.py       # Outbound transport adapter contract
     mapper.py          # Payload mapping contract
@@ -41,12 +42,16 @@ The framework separates queue-level and item-level state to support staged commi
 - Queue: lifecycle container for dispatch operations.
 - QueueItem: unit of work sent through adapters.
 - DispatchResult: normalized success/failure output from transport layer.
+- Queue scoping metadata (session/user/context identifiers) for application-level resolution.
+- Queue snapshot read model for inspection-friendly state queries.
+- Lightweight queue activity stream for queue/session inspection.
 
 Detailed definitions live in:
 
 - `docs/framework/queue-model.md`
 - `docs/framework/state-model.md`
 - `docs/framework/dispatch-lifecycle.md`
+- `docs/framework/queue-inspection.md`
 
 ## Dispatch lifecycle (target flow)
 
