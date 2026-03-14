@@ -2,50 +2,21 @@
 
 ## Core extension points
 
-The framework exposes contracts that isolate orchestration from infrastructure and business mapping logic.
+- `QueueRepository`: persistence abstraction for queue/item state and lookup.
+- `QueueActivityLog`: queue/session activity stream abstraction.
+- `Dispatcher`: dispatch orchestration boundary.
+- `TransportAdapter`: outbound integration boundary.
+- `PayloadMapper`: transforms generic payload contracts.
+- `RetryPolicy` / `DispatchPolicy`: pluggable behavior controls.
 
-- `QueueRepository`: persistence abstraction for queue and item state, including scoped queue lookup.
-- `QueueActivityLog`: lightweight activity stream abstraction for queue/session event inspection.
-- `Dispatcher`: orchestration contract for dispatch operations.
-- `TransportAdapter`: outbound transport integration point.
-- `PayloadMapper`: payload transformation boundary.
-- `RetryPolicy` / `DispatchPolicy`: behavior and control policies.
+## Generic payload + adapter mapping
 
-## Adapter strategy
+Core queue items store generic payload contracts (`payload`, `payload_type`, `payload_version`).
 
-Transport adapters can target any outbound system:
+Adapters and payload mappers transform those generic contracts into target-specific requests. This keeps framework domain models business-neutral and target-neutral.
 
-- REST APIs
-- event/message brokers
-- SAP and non-SAP systems
-- internal service endpoints
+## Metadata extensibility
 
-The core framework depends only on adapter contracts, not transport-specific implementations.
+Both `Queue` and `QueueItem` support optional opaque `metadata` fields.
 
-## Policy strategy
-
-Policies are injectable to keep runtime behavior configurable without changing core orchestration.
-
-Examples:
-
-- max attempts
-- retry eligibility
-- dispatch ordering
-- selective queue routing
-
-## Persistence strategy
-
-The first reference implementation uses in-memory storage.
-
-Future backends (SQL/NoSQL/event store) can implement the same repository contract with no changes to queue/domain semantics.
-
-## Application-facing queue ergonomics
-
-Framework helpers (`QueueResolver`, `build_queue_snapshot`) provide additive capabilities for consuming applications:
-
-- queue get-or-create by `(session_id, context_type, context_id)`
-- queue listing by session/context scope
-- stable queue snapshot read model for inspection endpoints
-- lightweight activity history access without runtime coupling
-
-These capabilities are discoverability/inspection-focused and do not change transport, lifecycle, or dispatch behavior.
+Implementations should preserve metadata safely and avoid aliasing when creating objects from caller-provided dictionaries.

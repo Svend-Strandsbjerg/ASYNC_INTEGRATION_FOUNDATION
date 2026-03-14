@@ -52,7 +52,7 @@ class MockDispatcher(Dispatcher):
         if queue.state == QueueState.PAUSED:
             return queue
 
-        item = next((i for i in queue.items if i.id == item_id), None)
+        item = next((i for i in queue.items if i.item_id == item_id), None)
         if item is None:
             raise ValueError(f"Queue item not found: {item_id}")
 
@@ -60,7 +60,7 @@ class MockDispatcher(Dispatcher):
             return queue
 
         queue.state = QueueState.DISPATCHING
-        self._record_activity(queue, QueueActivityType.DISPATCH_STARTED, item_id=item.id)
+        self._record_activity(queue, QueueActivityType.DISPATCH_STARTED, item_id=item.item_id)
 
         self._dispatch_item(queue, item)
         queue.state = self._aggregate_queue_state(queue)
@@ -78,16 +78,19 @@ class MockDispatcher(Dispatcher):
         item.state = QueueItemState.SENDING
         item.attempt_count += 1
         item.last_attempt_at = datetime.now(timezone.utc)
+        item.updated_at = item.last_attempt_at
         item.mapped_payload = self.mapper.map_payload(item.payload)
         result = self.transport.send(item.mapped_payload)
 
         if result.success:
             item.state = QueueItemState.SENT
             item.last_error = None
-            self._record_activity(queue, QueueActivityType.ITEM_SENT, item_id=item.id)
+            item.updated_at = datetime.now(timezone.utc)
+            self._record_activity(queue, QueueActivityType.ITEM_SENT, item_id=item.item_id)
             return
 
         item.last_error = result.error_message
+        item.updated_at = datetime.now(timezone.utc)
         if result.retryable and self.retry_policy.can_retry(item):
             item.state = QueueItemState.RETRY_WAITING
             return
@@ -126,7 +129,7 @@ class MockDispatcher(Dispatcher):
         if self.activity_log is None:
             return
         self.activity_log.record(
-            queue_id=queue.id,
+            queue_id=queue.queue_id,
             session_id=queue.session_id,
             event_type=event_type,
             item_id=item_id,

@@ -27,6 +27,9 @@ class QueueResolver:
         dispatch_mode: DispatchMode,
         user_id: str | None = None,
         metadata: dict | None = None,
+        correlation_id: str | None = None,
+        business_key: str | None = None,
+        external_reference: str | None = None,
     ) -> Queue:
         existing = self.repository.get_queue_by_scope(
             session_id=session_id,
@@ -37,14 +40,17 @@ class QueueResolver:
             return existing
 
         queue = Queue(
-            id=f"{session_id}:{context_type}:{context_id}",
-            name=f"{context_type}-{context_id}",
+            queue_type=context_type,
             dispatch_mode=dispatch_mode,
             session_id=session_id,
             user_id=user_id,
             context_type=context_type,
             context_id=context_id,
-            metadata=metadata or {},
+            correlation_id=correlation_id,
+            business_key=business_key,
+            external_reference=external_reference,
+            created_by=user_id,
+            metadata=dict(metadata or {}),
         )
         created = self.repository.create_queue(queue)
         self._record(created, QueueActivityType.QUEUE_CREATED)
@@ -52,9 +58,14 @@ class QueueResolver:
 
     def add_item(self, queue_id: str, item: QueueItem) -> Queue:
         queue = self._require_queue(queue_id)
+        if item.queue_id and item.queue_id != queue.queue_id:
+            raise ValueError(f"Queue item queue_id mismatch: expected {queue.queue_id}, got {item.queue_id}")
+
+        item.queue_id = queue.queue_id
+        item.sequence_number = self._next_sequence_number(queue)
         queue.items.append(item)
         saved = self.repository.save_queue(queue)
-        self._record(saved, QueueActivityType.ITEM_ADDED, item_id=item.id)
+        self._record(saved, QueueActivityType.ITEM_ADDED, item_id=item.item_id)
         return saved
 
     def pause_queue(self, queue_id: str) -> Queue:
@@ -75,7 +86,7 @@ class QueueResolver:
         if self.activity_log is None:
             return
         self.activity_log.record(
-            queue_id=queue.id,
+            queue_id=queue.queue_id,
             session_id=queue.session_id,
             event_type=event_type,
             item_id=item_id,
@@ -87,14 +98,23 @@ class QueueResolver:
             raise ValueError(f"Queue not found: {queue_id}")
         return queue
 
+    def _next_sequence_number(self, queue: Queue) -> int:
+        if not queue.items:
+            return 1
+        return max((item.sequence_number or 0) for item in queue.items) + 1
+
 
 def build_queue_snapshot(queue: Queue) -> QueueSnapshot:
     return QueueSnapshot(
-        queue_id=queue.id,
+        queue_id=queue.queue_id,
+        queue_type=queue.queue_type,
         session_id=queue.session_id,
         user_id=queue.user_id,
         context_type=queue.context_type,
         context_id=queue.context_id,
+        correlation_id=queue.correlation_id,
+        business_key=queue.business_key,
+        external_reference=queue.external_reference,
         queue_state=queue.state.value,
         dispatch_mode=queue.dispatch_mode.value,
         is_paused=queue.is_paused,
@@ -106,16 +126,30 @@ def build_queue_snapshot(queue: Queue) -> QueueSnapshot:
         failed_items=_count_items(queue.items, {QueueItemState.FAILED}),
         items=[
             QueueItemSnapshot(
-                item_id=item.id,
-                display_name=item.payload.get("id", item.id),
+                item_id=item.item_id,
+                queue_id=item.queue_id,
+                sequence_number=item.sequence_number,
+                item_type=item.item_type,
+                payload_type=item.payload_type,
+                payload_version=item.payload_version,
+                adapter_key=item.adapter_key,
+                target_system=item.target_system,
+                operation=item.operation,
+                correlation_id=item.correlation_id,
+                business_key=item.business_key,
+                external_reference=item.external_reference,
+                idempotency_key=item.idempotency_key,
+                display_name=item.payload.get("id", item.item_id),
                 state=item.state.value,
                 attempt_count=item.attempt_count,
                 created_at=item.created_at,
                 last_attempt_at=item.last_attempt_at,
                 last_error=item.last_error,
+                metadata=dict(item.metadata),
             )
-            for item in queue.items
+            for item in sorted(queue.items, key=lambda item: item.sequence_number or 0)
         ],
+        metadata=dict(queue.metadata),
         last_updated_at=queue.updated_at,
     )
 

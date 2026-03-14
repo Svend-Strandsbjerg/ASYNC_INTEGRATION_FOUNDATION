@@ -4,6 +4,15 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Any
+from uuid import uuid4
+
+
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _new_id() -> str:
+    return str(uuid4())
 
 
 class DispatchMode(str, Enum):
@@ -49,36 +58,90 @@ class QueueActivityType(str, Enum):
 
 @dataclass
 class QueueItem:
-    id: str
-    queue_id: str
-    payload: dict[str, Any]
+    item_id: str = field(default_factory=_new_id)
+    queue_id: str = ""
+    item_type: str | None = None
+    item_state: QueueItemState = QueueItemState.NEW
+    sequence_number: int | None = None
+    payload: dict[str, Any] = field(default_factory=dict)
+    payload_type: str | None = None
+    payload_version: str | None = None
+    adapter_key: str | None = None
+    target_system: str | None = None
+    operation: str | None = None
+    correlation_id: str | None = None
+    causation_id: str | None = None
+    request_id: str | None = None
+    business_key: str | None = None
+    external_reference: str | None = None
+    idempotency_key: str | None = None
     mapped_payload: dict[str, Any] | None = None
-    state: QueueItemState = QueueItemState.NEW
     attempt_count: int = 0
     max_attempts: int = 3
     last_error: str | None = None
-    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = field(default_factory=_utcnow)
+    updated_at: datetime = field(default_factory=_utcnow)
     last_attempt_at: datetime | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        self.payload = dict(self.payload)
+        self.metadata = dict(self.metadata)
+
+    @property
+    def id(self) -> str:
+        return self.item_id
+
+    @property
+    def state(self) -> QueueItemState:
+        return self.item_state
+
+    @state.setter
+    def state(self, value: QueueItemState) -> None:
+        self.item_state = value
 
 
 @dataclass
 class Queue:
-    id: str
-    name: str
+    queue_id: str = field(default_factory=_new_id)
+    queue_type: str = "default"
+    queue_state: QueueState = QueueState.OPEN
     dispatch_mode: DispatchMode = DispatchMode.MANUAL_COMMIT
-    state: QueueState = QueueState.OPEN
     items: list[QueueItem] = field(default_factory=list)
-    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
-    updated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = field(default_factory=_utcnow)
+    updated_at: datetime = field(default_factory=_utcnow)
     session_id: str | None = None
     user_id: str | None = None
     context_type: str | None = None
     context_id: str | None = None
+    correlation_id: str | None = None
+    business_key: str | None = None
+    external_reference: str | None = None
+    created_by: str | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        self.metadata = dict(self.metadata)
+
+    @property
+    def id(self) -> str:
+        return self.queue_id
+
+    @property
+    def name(self) -> str:
+        return self.queue_type
+
+    @property
+    def state(self) -> QueueState:
+        return self.queue_state
+
+    @state.setter
+    def state(self, value: QueueState) -> None:
+        self.queue_state = value
 
     @property
     def is_paused(self) -> bool:
-        return self.state == QueueState.PAUSED
+        return self.queue_state == QueueState.PAUSED
 
 
 @dataclass
@@ -92,21 +155,38 @@ class DispatchResult:
 @dataclass
 class QueueItemSnapshot:
     item_id: str
+    queue_id: str
+    sequence_number: int | None
+    item_type: str | None
+    payload_type: str | None
+    payload_version: str | None
+    adapter_key: str | None
+    target_system: str | None
+    operation: str | None
+    correlation_id: str | None
+    business_key: str | None
+    external_reference: str | None
+    idempotency_key: str | None
     display_name: str
     state: str
     attempt_count: int
     created_at: datetime
     last_attempt_at: datetime | None
     last_error: str | None
+    metadata: dict[str, Any]
 
 
 @dataclass
 class QueueSnapshot:
     queue_id: str
+    queue_type: str
     session_id: str | None
     user_id: str | None
     context_type: str | None
     context_id: str | None
+    correlation_id: str | None
+    business_key: str | None
+    external_reference: str | None
     queue_state: str
     dispatch_mode: str
     is_paused: bool
@@ -117,6 +197,7 @@ class QueueSnapshot:
     sent_items: int
     failed_items: int
     items: list[QueueItemSnapshot]
+    metadata: dict[str, Any]
     last_updated_at: datetime
 
 
