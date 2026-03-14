@@ -17,23 +17,18 @@ class DispatchMode(str, Enum):
 class QueueState(str, Enum):
     OPEN = "OPEN"
     PAUSED = "PAUSED"
-    READY = "READY"
     DISPATCHING = "DISPATCHING"
     COMPLETED = "COMPLETED"
-    FAILED = "FAILED"
-    PARTIAL_FAILED = "PARTIAL_FAILED"
-    CANCELLED = "CANCELLED"
 
 
 class QueueItemState(str, Enum):
     NEW = "NEW"
-    STAGED = "STAGED"
     READY = "READY"
-    SENDING = "SENDING"
+    DISPATCHING = "DISPATCHING"
     SENT = "SENT"
     FAILED = "FAILED"
     RETRY_WAITING = "RETRY_WAITING"
-    CANCELLED = "CANCELLED"
+    DEAD_LETTER = "DEAD_LETTER"
 
 
 class QueueActivityType(str, Enum):
@@ -54,8 +49,11 @@ class QueueItem:
     payload: dict[str, Any]
     mapped_payload: dict[str, Any] | None = None
     state: QueueItemState = QueueItemState.NEW
+    sequence_number: int = 0
     attempt_count: int = 0
     max_attempts: int = 3
+    retry_policy_key: str | None = None
+    next_retry_at: datetime | None = None
     last_error: str | None = None
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     last_attempt_at: datetime | None = None
@@ -75,6 +73,7 @@ class Queue:
     context_type: str | None = None
     context_id: str | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
+    pre_pause_state: QueueState = QueueState.OPEN
 
     @property
     def is_paused(self) -> bool:
@@ -97,6 +96,7 @@ class QueueItemSnapshot:
     attempt_count: int
     created_at: datetime
     last_attempt_at: datetime | None
+    next_retry_at: datetime | None
     last_error: str | None
 
 
@@ -111,11 +111,15 @@ class QueueSnapshot:
     dispatch_mode: str
     is_paused: bool
     total_items: int
-    waiting_items: int
+    new_items: int
     ready_items: int
-    sending_items: int
+    dispatching_items: int
     sent_items: int
     failed_items: int
+    retry_waiting_items: int
+    dead_letter_items: int
+    has_retry_waiting_items: bool
+    has_dead_letter_items: bool
     items: list[QueueItemSnapshot]
     last_updated_at: datetime
 

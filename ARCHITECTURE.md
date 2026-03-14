@@ -1,107 +1,40 @@
 # ASYNC_INTEGRATION_FOUNDATION Architecture
 
-## Purpose
+## Principles
 
-This document defines the target architecture of the async integration foundation and the phased strategy for implementing runtime behavior safely.
+- Framework-level and business-neutral
+- Explicit state machines at queue and item levels
+- Centralized transition validation and dispatchability logic
+- Deterministic dispatch ordering
+- Retry/dead-letter readiness without transport lock-in
 
-## Architecture principles
+## Core lifecycle
 
-- Framework first, use case second
-- Explicit state and transitions
-- Pluggable transports and policies
-- Business-neutral core orchestration
-- Observability-ready status tracking
-- Incremental delivery with test-backed changes
+1. Queue starts in `OPEN`.
+2. Items are created as `NEW` and promoted to `READY` when dispatchable.
+3. Queue may move to `PAUSED`; dispatch is blocked while paused.
+4. Dispatch transitions queue to `DISPATCHING` and items `READY -> DISPATCHING`.
+5. Successful send: `DISPATCHING -> SENT`.
+6. Failed send: `DISPATCHING -> FAILED`, then either:
+   - `FAILED -> RETRY_WAITING` (with `next_retry_at`), or
+   - `FAILED -> DEAD_LETTER`.
+7. Retry preparation promotes `RETRY_WAITING -> READY` when due.
+8. Queue resolves to `COMPLETED` when no active work remains; otherwise `OPEN`.
 
-## High-level module structure
+## Module layout
 
 ```text
 src/async_integration_foundation/
   domain/
-    models.py          # Queue/QueueItem entities and states
+    models.py
+    state_machine.py
   contracts/
-    persistence.py     # Queue persistence contract + scoped lookup
-    activity.py        # Queue activity log contract
-    dispatcher.py      # Dispatch/orchestrator contract
-    transport.py       # Outbound transport adapter contract
-    mapper.py          # Payload mapping contract
-    policy.py          # Retry and dispatch policy contracts
   implementations/
-    in_memory.py       # In-memory queue repository
-    mock_transport.py  # Mock outbound adapter
-    orchestrator.py    # Reference dispatcher/orchestrator
   examples/
-    timesheet.py       # Reference staged commit flow
-    swimlane.py        # Reference immediate dispatch flow
 ```
 
-## Core domain model
+## Validation and safety
 
-The framework separates queue-level and item-level state to support staged commit, immediate dispatch, and partial failure visibility.
-
-- Queue: lifecycle container for dispatch operations.
-- QueueItem: unit of work sent through adapters.
-- DispatchResult: normalized success/failure output from transport layer.
-- Queue scoping metadata (session/user/context identifiers) for application-level resolution.
-- Queue snapshot read model for inspection-friendly state queries.
-- Lightweight queue activity stream for queue/session inspection.
-
-Detailed definitions live in:
-
-- `docs/framework/queue-model.md`
-- `docs/framework/state-model.md`
-- `docs/framework/dispatch-lifecycle.md`
-- `docs/framework/queue-inspection.md`
-
-## Dispatch lifecycle (target flow)
-
-1. Queue is created (`OPEN`).
-2. Items are appended (`NEW`/`STAGED`).
-3. Queue may be paused (`PAUSED`) and resumed (`OPEN`).
-4. Queue is committed (`READY`) for batch dispatch, or item-level dispatch is triggered immediately.
-5. Dispatcher transitions queue to `DISPATCHING` and item(s) to `SENDING`.
-6. Transport adapter returns success/failure.
-7. Retryable failures become `RETRY_WAITING`; non-retryable failures become `FAILED`.
-8. Queue resolves to `COMPLETED`, `PARTIAL_FAILED`, or `FAILED` based on aggregate item status.
-
-## Phase-based implementation strategy
-
-### Phase 1: Foundation shaping
-
-- Repository identity and architecture docs updated for async integration scope.
-- Module boundaries and contracts documented.
-
-### Phase 2: Model and contracts
-
-- Queue/item state model implemented.
-- Persistence, dispatch, adapter, mapper, and policy interfaces established.
-
-### Phase 3: Reference implementation
-
-- In-memory persistence.
-- Mock transport adapter.
-- Mock/reference orchestrator.
-- Example flows and tests.
-
-### Phase 4: Production runtime evolution
-
-Future iterations can add:
-
-- advanced pause/unpause semantics,
-- ordered dispatch guarantees,
-- richer retry backoff,
-- telemetry hooks,
-- persistence backends,
-- operational controls.
-
-## Governance and workflow architecture
-
-The repository keeps the template governance model:
-
-- branch-based workflow,
-- PR-first change management,
-- CI checks,
-- documented standards and process,
-- human-reviewed merges.
-
-These controls ensure framework evolution remains safe, auditable, and maintainable.
+- Invalid queue/item transitions raise errors.
+- Dispatch eligibility is defined once and reused by queue/item/retry paths.
+- Snapshot read models provide state-distribution visibility for operations.

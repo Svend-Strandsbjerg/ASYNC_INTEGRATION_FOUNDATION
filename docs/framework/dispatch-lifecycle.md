@@ -1,27 +1,20 @@
 # Dispatch Lifecycle
 
-## Lifecycle summary
+## End-to-end flow
 
-The dispatch lifecycle separates staging, readiness, sending, and post-send resolution.
+1. Queue is resolved/created in `OPEN`.
+2. Items are added in `NEW` or directly in `READY`.
+3. Optional pause/resume controls queue dispatch eligibility.
+4. Queue dispatch transitions queue to `DISPATCHING`.
+5. Eligible items (`READY` only) are selected in `sequence_number` order.
+6. Item transitions: `READY -> DISPATCHING -> SENT|FAILED`.
+7. Failed items transition to `RETRY_WAITING` or `DEAD_LETTER`.
+8. Retry preparation promotes due retry items back to `READY`.
+9. Queue resolves to `OPEN` (active work remains) or `COMPLETED` (no active work).
 
-1. Create queue in `OPEN`.
-2. Append items in `NEW` (or directly `READY` for immediate mode).
-3. Stage items (`STAGED`) when using manual commit.
-4. Commit queue/items to `READY`.
-5. Dispatch transitions queue to `DISPATCHING` and item(s) to `SENDING`.
-6. Transport result resolves items to `SENT`, `FAILED`, or `RETRY_WAITING`.
-7. Queue aggregate state resolves to `COMPLETED`, `PARTIAL_FAILED`, or `FAILED`.
+## Guarantees
 
-## Supported dispatch patterns
-
-- Manual commit queue dispatch
-- Immediate dispatch on append
-- Batch dispatch for all ready items
-- Single-item dispatch
-- Ordered dispatch (reference ordering by insertion)
-
-## Retry lifecycle
-
-- Retryable failure increments `attempt_count` and moves item to `RETRY_WAITING`.
-- Retry operation promotes retry-waiting items back to `READY` when attempts remain.
-- Non-retryable failures move item directly to `FAILED`.
+- Non-dispatchable states are ignored.
+- Queue `PAUSED` blocks dispatch.
+- Retry-waiting items are never dispatched directly.
+- Dead-letter items are terminal for automatic dispatch.

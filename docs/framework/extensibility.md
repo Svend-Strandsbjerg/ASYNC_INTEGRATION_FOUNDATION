@@ -2,50 +2,30 @@
 
 ## Core extension points
 
-The framework exposes contracts that isolate orchestration from infrastructure and business mapping logic.
-
-- `QueueRepository`: persistence abstraction for queue and item state, including scoped queue lookup.
-- `QueueActivityLog`: lightweight activity stream abstraction for queue/session event inspection.
-- `Dispatcher`: orchestration contract for dispatch operations.
-- `TransportAdapter`: outbound transport integration point.
+- `QueueRepository`: queue persistence and scoped lookup.
+- `QueueActivityLog`: inspection-friendly event stream.
+- `Dispatcher`: queue/item dispatch orchestration.
+- `TransportAdapter`: outbound delivery abstraction.
 - `PayloadMapper`: payload transformation boundary.
-- `RetryPolicy` / `DispatchPolicy`: behavior and control policies.
+- `RetryPolicy`: retry eligibility decision.
 
-## Adapter strategy
+## State-machine extensibility
 
-Transport adapters can target any outbound system:
+State transitions and dispatchability are centralized in the domain state machine helpers.
 
-- REST APIs
-- event/message brokers
-- SAP and non-SAP systems
-- internal service endpoints
+This allows extensions to stay consistent:
 
-The core framework depends only on adapter contracts, not transport-specific implementations.
+- custom dispatchers can reuse transition validation
+- retry coordinators can promote `RETRY_WAITING -> READY` in one place
+- future replay tooling can intentionally handle `DEAD_LETTER`
 
-## Policy strategy
+## Retry/dead-letter extension hooks
 
-Policies are injectable to keep runtime behavior configurable without changing core orchestration.
+The model already supports enterprise retry evolution without transport coupling:
 
-Examples:
+- `max_attempts`
+- `next_retry_at`
+- optional `retry_policy_key`
+- terminal `DEAD_LETTER` state
 
-- max attempts
-- retry eligibility
-- dispatch ordering
-- selective queue routing
-
-## Persistence strategy
-
-The first reference implementation uses in-memory storage.
-
-Future backends (SQL/NoSQL/event store) can implement the same repository contract with no changes to queue/domain semantics.
-
-## Application-facing queue ergonomics
-
-Framework helpers (`QueueResolver`, `build_queue_snapshot`) provide additive capabilities for consuming applications:
-
-- queue get-or-create by `(session_id, context_type, context_id)`
-- queue listing by session/context scope
-- stable queue snapshot read model for inspection endpoints
-- lightweight activity history access without runtime coupling
-
-These capabilities are discoverability/inspection-focused and do not change transport, lifecycle, or dispatch behavior.
+Future schedulers/backoff strategies can be layered on top without changing payload contracts.

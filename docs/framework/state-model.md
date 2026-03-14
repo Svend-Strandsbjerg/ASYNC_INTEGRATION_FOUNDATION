@@ -2,33 +2,51 @@
 
 ## Queue states
 
-The framework models queue-level orchestration state explicitly.
+The queue lifecycle is intentionally explicit and constrained.
 
-- `OPEN`: queue accepts new items.
-- `PAUSED`: queue is temporarily blocked from dispatch.
-- `READY`: queue is committed and ready for dispatch.
-- `DISPATCHING`: queue is actively dispatching items.
-- `COMPLETED`: all items dispatched successfully.
-- `FAILED`: all items failed or queue-level failure.
-- `PARTIAL_FAILED`: mixed success/failure result.
-- `CANCELLED`: queue terminated intentionally.
+- `OPEN`: queue can accept items and can dispatch eligible items.
+- `PAUSED`: queue can still accept items but dispatch is blocked.
+- `DISPATCHING`: queue is currently dispatching one or more items.
+- `COMPLETED`: queue has no active work left.
+
+Allowed queue transitions:
+
+- `OPEN -> PAUSED`
+- `PAUSED -> OPEN` (or back to the pre-pause active state)
+- `OPEN -> DISPATCHING`
+- `DISPATCHING -> OPEN`
+- `OPEN -> COMPLETED`
+- `PAUSED -> COMPLETED`
 
 ## Queue item states
 
-Each item has independent dispatch state.
+Each queue item has its own lifecycle.
 
-- `NEW`: item created but not staged.
-- `STAGED`: item staged for manual commit flow.
-- `READY`: item eligible for dispatch.
-- `SENDING`: item currently being sent.
-- `SENT`: item successfully sent.
-- `FAILED`: item failed with no retry path.
-- `RETRY_WAITING`: item failed but retry remains possible.
-- `CANCELLED`: item cancelled.
+- `NEW`: item exists but is not dispatchable.
+- `READY`: item is dispatchable.
+- `DISPATCHING`: item is currently being sent.
+- `SENT`: terminal success state.
+- `FAILED`: failed attempt captured before retry/dead-letter routing.
+- `RETRY_WAITING`: waiting for retry eligibility (`next_retry_at`).
+- `DEAD_LETTER`: terminal failure state (no automatic retry).
 
-## Transition constraints
+Allowed item transitions:
 
-- Paused queues must not transition to `DISPATCHING` until unpaused.
-- Items in `SENT` are immutable for dispatch operations.
-- Retry transitions from `FAILED` require explicit reset logic.
-- Queue terminal states (`COMPLETED`, `FAILED`, `CANCELLED`) are inspectable and should not silently reopen.
+- `NEW -> READY`
+- `READY -> DISPATCHING`
+- `DISPATCHING -> SENT`
+- `DISPATCHING -> FAILED`
+- `FAILED -> RETRY_WAITING`
+- `RETRY_WAITING -> READY`
+- `FAILED -> DEAD_LETTER`
+
+Invalid transitions are rejected by the shared state machine helpers.
+
+## Dispatchability rules
+
+Dispatchability is centralized and deterministic:
+
+- dispatchable: `READY`
+- non-dispatchable: `NEW`, `DISPATCHING`, `SENT`, `FAILED`, `RETRY_WAITING`, `DEAD_LETTER`
+
+Queue dispatch selects eligible items in ascending `sequence_number` order.

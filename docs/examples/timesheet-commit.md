@@ -1,18 +1,15 @@
-# Example: Timesheet Staging and Commit
+# Example: Timesheet Commit Flow
 
 ## Scenario
 
-Timesheet entries are staged during user editing and committed in a controlled batch.
+Timesheet entries are prepared and committed in a controlled batch.
 
 ## Reference flow
 
-1. Create a queue for a timesheet session.
-2. Append entries as `STAGED` items.
-3. Pause queue if review/validation is needed.
-4. Unpause and commit queue to mark staged items as `READY`.
-5. Dispatch queue in batch mode.
-6. Inspect item-level status and retry retryable failures.
-
-## Why this matters
-
-This pattern proves staged commit behavior without embedding timesheet business logic into the framework core.
+1. Create queue (`OPEN`).
+2. Add entries (`NEW` or `READY`).
+3. Promote staged entries (`NEW -> READY`) when commit occurs.
+4. Optional pause/resume for operator control.
+5. Dispatch queue; items move through `READY -> DISPATCHING -> SENT|FAILED`.
+6. Route failed items to `RETRY_WAITING` or `DEAD_LETTER`.
+7. Inspect queue snapshot counters and retry/dead-letter status.
