@@ -1,0 +1,31 @@
+{
+  "name": "@async-integration-foundation/core",
+  "version": "0.1.0",
+  "description": "Reusable async integration and queue runtime foundation",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "clean": "node -e \"require('fs').rmSync('dist', { recursive: true, force: true })\"",
+    "build": "npm run clean && tsc -p tsconfig.json",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "queue",
+    "integration",
+    "async",
+    "typescript"
+  ],
+  "license": "UNLICENSED",
+  "devDependencies": {
+    "typescript": "^5.6.3"
+  }
+}
