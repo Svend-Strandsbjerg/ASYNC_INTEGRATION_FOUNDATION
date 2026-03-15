@@ -59,8 +59,16 @@ class QueueResolver:
 
     def add_item(self, queue_id: str, item: QueueItem) -> Queue:
         queue = self._require_queue(queue_id)
-        if item.sequence_number == 0:
+        if item.queue_id and item.queue_id != queue_id:
+            raise ValueError(f"queue_id mismatch: expected {queue_id}, got {item.queue_id}")
+        item.queue_id = queue_id
+        if not item.sequence_number:
             item.sequence_number = _next_sequence_number(queue.items)
+        item.payload_type = item.payload_type or f"{queue.queue_type}.action"
+        item.adapter_key = item.adapter_key or "rest_api"
+        item.target_system = item.target_system or "workflow_engine"
+        item.operation = item.operation or "POST"
+        item.idempotency_key = item.idempotency_key or f"idem-{item.sequence_number}"
         queue.items.append(item)
         saved = self.repository.save_queue(queue)
         self._record(saved, QueueActivityType.ITEM_ADDED, item_id=item.item_id)
@@ -152,7 +160,7 @@ def build_queue_snapshot(queue: Queue) -> QueueSnapshot:
                 last_error=item.last_error,
                 metadata=dict(item.metadata),
             )
-            for item in sorted(queue.items, key=lambda item: item.sequence_number or 0)
+            for item in sorted(queue.items, key=lambda item: (item.sequence_number is None, item.sequence_number or 0))
         ],
         metadata=dict(queue.metadata),
         last_updated_at=queue.updated_at,

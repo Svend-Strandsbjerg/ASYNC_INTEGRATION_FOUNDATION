@@ -38,3 +38,20 @@ Queue snapshots expose queue/item lifecycle visibility with explicit counters:
 - `has_dead_letter_items`
 
 This read model is intended for inspection/monitoring use cases.
+
+## Runtime builder contract
+
+For runtime integrations (such as planning POCs), use:
+
+- `create_queue_id` / `createQueueId`
+- `create_queue_item_id` / `createQueueItemId`
+- `build_queue_item` / `buildQueueItem`
+
+`build_queue_item` stores scheduling metadata in a canonical structure:
+
+- `scheduling.day_key`
+- `scheduling.start_time`
+- `scheduling.end_time`
+- `scheduling.interval`
+
+Supported queue operations: `create | update | delete`.
