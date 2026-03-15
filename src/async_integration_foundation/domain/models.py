@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any
+from typing import Any, Literal
 from uuid import uuid4
 
 
@@ -40,6 +40,17 @@ class QueueItemState(str, Enum):
     DEAD_LETTER = "DEAD_LETTER"
 
 
+QueueOperation = Literal["create", "update", "delete"]
+
+
+@dataclass(frozen=True)
+class QueueScheduling:
+    day_key: str
+    start_time: str
+    end_time: str
+    interval: str
+
+
 class QueueActivityType(str, Enum):
     QUEUE_CREATED = "queue_created"
     QUEUE_PAUSED = "queue_paused"
@@ -51,7 +62,7 @@ class QueueActivityType(str, Enum):
     DISPATCH_FAILED = "dispatch_failed"
 
 
-@dataclass
+@dataclass(init=False)
 class QueueItem:
     item_id: str = field(default_factory=_new_id)
     queue_id: str = ""
@@ -71,8 +82,6 @@ class QueueItem:
     external_reference: str | None = None
     idempotency_key: str | None = None
     mapped_payload: dict[str, Any] | None = None
-    state: QueueItemState = QueueItemState.NEW
-    sequence_number: int = 0
     attempt_count: int = 0
     max_attempts: int = 3
     retry_policy_key: str | None = None
@@ -82,10 +91,69 @@ class QueueItem:
     updated_at: datetime = field(default_factory=_utcnow)
     last_attempt_at: datetime | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
+    scheduling: QueueScheduling | None = None
 
-    def __post_init__(self) -> None:
-        self.payload = dict(self.payload)
-        self.metadata = dict(self.metadata)
+    def __init__(
+        self,
+        item_id: str | None = None,
+        queue_id: str = "",
+        item_type: str | None = None,
+        item_state: QueueItemState = QueueItemState.NEW,
+        sequence_number: int | None = None,
+        payload: dict[str, Any] | None = None,
+        payload_type: str | None = None,
+        payload_version: str | None = None,
+        adapter_key: str | None = None,
+        target_system: str | None = None,
+        operation: str | None = None,
+        correlation_id: str | None = None,
+        causation_id: str | None = None,
+        request_id: str | None = None,
+        business_key: str | None = None,
+        external_reference: str | None = None,
+        idempotency_key: str | None = None,
+        mapped_payload: dict[str, Any] | None = None,
+        attempt_count: int = 0,
+        max_attempts: int = 3,
+        retry_policy_key: str | None = None,
+        next_retry_at: datetime | None = None,
+        last_error: str | None = None,
+        created_at: datetime | None = None,
+        updated_at: datetime | None = None,
+        last_attempt_at: datetime | None = None,
+        metadata: dict[str, Any] | None = None,
+        scheduling: QueueScheduling | None = None,
+        id: str | None = None,
+        state: QueueItemState | None = None,
+    ) -> None:
+        self.item_id = item_id or id or _new_id()
+        self.queue_id = queue_id
+        self.item_type = item_type
+        self.item_state = state or item_state
+        self.sequence_number = sequence_number
+        self.payload = dict(payload or {})
+        self.payload_type = payload_type
+        self.payload_version = payload_version
+        self.adapter_key = adapter_key
+        self.target_system = target_system
+        self.operation = operation
+        self.correlation_id = correlation_id
+        self.causation_id = causation_id
+        self.request_id = request_id
+        self.business_key = business_key
+        self.external_reference = external_reference
+        self.idempotency_key = idempotency_key
+        self.mapped_payload = dict(mapped_payload) if mapped_payload is not None else None
+        self.attempt_count = attempt_count
+        self.max_attempts = max_attempts
+        self.retry_policy_key = retry_policy_key
+        self.next_retry_at = next_retry_at
+        self.last_error = last_error
+        self.created_at = created_at or _utcnow()
+        self.updated_at = updated_at or _utcnow()
+        self.last_attempt_at = last_attempt_at
+        self.metadata = dict(metadata or {})
+        self.scheduling = scheduling
 
     @property
     def id(self) -> str:
@@ -100,7 +168,7 @@ class QueueItem:
         self.item_state = value
 
 
-@dataclass
+@dataclass(init=False)
 class Queue:
     queue_id: str = field(default_factory=_new_id)
     queue_type: str = "default"
@@ -120,8 +188,47 @@ class Queue:
     metadata: dict[str, Any] = field(default_factory=dict)
     pre_pause_state: QueueState = QueueState.OPEN
 
-    def __post_init__(self) -> None:
-        self.metadata = dict(self.metadata)
+    def __init__(
+        self,
+        queue_id: str | None = None,
+        queue_type: str = "default",
+        queue_state: QueueState = QueueState.OPEN,
+        dispatch_mode: DispatchMode = DispatchMode.MANUAL_COMMIT,
+        items: list[QueueItem] | None = None,
+        created_at: datetime | None = None,
+        updated_at: datetime | None = None,
+        session_id: str | None = None,
+        user_id: str | None = None,
+        context_type: str | None = None,
+        context_id: str | None = None,
+        correlation_id: str | None = None,
+        business_key: str | None = None,
+        external_reference: str | None = None,
+        created_by: str | None = None,
+        metadata: dict[str, Any] | None = None,
+        pre_pause_state: QueueState = QueueState.OPEN,
+        id: str | None = None,
+        name: str | None = None,
+        state: QueueState | None = None,
+        status: QueueState | None = None,
+    ) -> None:
+        self.queue_id = queue_id or id or _new_id()
+        self.queue_type = name or queue_type
+        self.queue_state = status or state or queue_state
+        self.dispatch_mode = dispatch_mode
+        self.items = list(items or [])
+        self.created_at = created_at or _utcnow()
+        self.updated_at = updated_at or _utcnow()
+        self.session_id = session_id
+        self.user_id = user_id
+        self.context_type = context_type
+        self.context_id = context_id
+        self.correlation_id = correlation_id
+        self.business_key = business_key
+        self.external_reference = external_reference
+        self.created_by = created_by
+        self.metadata = dict(metadata or {})
+        self.pre_pause_state = pre_pause_state
 
     @property
     def id(self) -> str:
@@ -137,6 +244,14 @@ class Queue:
 
     @state.setter
     def state(self, value: QueueState) -> None:
+        self.queue_state = value
+
+    @property
+    def status(self) -> QueueState:
+        return self.queue_state
+
+    @status.setter
+    def status(self, value: QueueState) -> None:
         self.queue_state = value
 
     @property
