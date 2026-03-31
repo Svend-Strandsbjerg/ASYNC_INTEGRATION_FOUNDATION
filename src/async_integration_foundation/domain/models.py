@@ -43,14 +43,6 @@ class QueueItemState(str, Enum):
 QueueOperation = Literal["create", "update", "delete"]
 
 
-@dataclass(frozen=True)
-class QueueScheduling:
-    day_key: str
-    start_time: str
-    end_time: str
-    interval: str
-
-
 class QueueActivityType(str, Enum):
     QUEUE_CREATED = "queue_created"
     QUEUE_PAUSED = "queue_paused"
@@ -91,7 +83,6 @@ class QueueItem:
     updated_at: datetime = field(default_factory=_utcnow)
     last_attempt_at: datetime | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
-    scheduling: QueueScheduling | None = None
 
     def __init__(
         self,
@@ -122,7 +113,6 @@ class QueueItem:
         updated_at: datetime | None = None,
         last_attempt_at: datetime | None = None,
         metadata: dict[str, Any] | None = None,
-        scheduling: QueueScheduling | None = None,
         id: str | None = None,
         state: QueueItemState | None = None,
     ) -> None:
@@ -153,7 +143,6 @@ class QueueItem:
         self.updated_at = updated_at or _utcnow()
         self.last_attempt_at = last_attempt_at
         self.metadata = dict(metadata or {})
-        self.scheduling = scheduling
 
     @property
     def id(self) -> str:

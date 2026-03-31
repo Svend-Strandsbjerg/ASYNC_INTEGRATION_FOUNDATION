@@ -61,15 +61,15 @@ def test_queue_snapshot_contains_read_model_fields() -> None:
         QueueItem(
             item_id="item-1",
             queue_id=queue.queue_id,
-            payload={"id": "item-1", "label": "Approve"},
+            payload={"label": "Approve"},
             state=QueueItemState.NEW,
         ),
     )
     saved = repo.get_queue(queue.queue_id)
     assert saved is not None
 
-    saved.items.append(QueueItem(id="item-2", queue_id=queue.id, payload={"id": "item-2"}, state=QueueItemState.RETRY_WAITING))
-    saved.items.append(QueueItem(id="item-3", queue_id=queue.id, payload={"id": "item-3"}, state=QueueItemState.DEAD_LETTER))
+    saved.items.append(QueueItem(id="item-2", queue_id=queue.id, payload={"status": "waiting"}, state=QueueItemState.RETRY_WAITING))
+    saved.items.append(QueueItem(id="item-3", queue_id=queue.id, payload={"status": "dead"}, state=QueueItemState.DEAD_LETTER))
 
     snapshot = build_queue_snapshot(saved)
 
@@ -88,11 +88,11 @@ def test_queue_snapshot_contains_read_model_fields() -> None:
     assert snapshot.items[0].item_id == "item-1"
     assert snapshot.items[0].queue_id == queue.queue_id
     assert snapshot.items[0].sequence_number == 1
-    assert snapshot.items[0].payload_type == "workflow.action"
-    assert snapshot.items[0].adapter_key == "rest_api"
-    assert snapshot.items[0].target_system == "workflow_engine"
-    assert snapshot.items[0].operation == "POST"
-    assert snapshot.items[0].idempotency_key == "idem-1"
+    assert snapshot.items[0].payload_type is None
+    assert snapshot.items[0].adapter_key is None
+    assert snapshot.items[0].target_system is None
+    assert snapshot.items[0].operation is None
+    assert snapshot.items[0].idempotency_key is None
     assert snapshot.items[0].display_name == "item-1"
 
 
@@ -100,12 +100,12 @@ def test_pause_blocks_dispatch_but_add_item_is_allowed() -> None:
     repo = InMemoryQueueRepository()
     resolver = QueueResolver(repository=repo)
     queue = resolver.get_or_create_queue("s-1", "workflow", "4711", DispatchMode.IMMEDIATE)
-    resolver.add_item(queue.id, QueueItem(id="item-1", queue_id=queue.id, payload={"id": "item-1"}, state=QueueItemState.READY))
+    resolver.add_item(queue.id, QueueItem(id="item-1", queue_id=queue.id, payload={"value": "item-1"}, state=QueueItemState.READY))
 
     paused = resolver.pause_queue(queue.id)
     assert paused.state == QueueState.PAUSED
 
-    resolver.add_item(queue.id, QueueItem(id="item-2", queue_id=queue.id, payload={"id": "item-2"}, state=QueueItemState.NEW))
+    resolver.add_item(queue.id, QueueItem(id="item-2", queue_id=queue.id, payload={"value": "item-2"}, state=QueueItemState.NEW))
 
     dispatcher = MockDispatcher(
         repository=repo,
@@ -127,7 +127,7 @@ def test_activity_log_records_queue_actions_and_dispatch_events() -> None:
     queue = resolver.get_or_create_queue("s-1", "workflow", "4711", DispatchMode.IMMEDIATE)
     resolver.add_item(
         queue.queue_id,
-        QueueItem(item_id="item-1", queue_id=queue.queue_id, payload={"id": "item-1"}, item_state=QueueItemState.READY),
+        QueueItem(item_id="item-1", queue_id=queue.queue_id, payload={"item_ref": "item-1"}, item_state=QueueItemState.READY),
     )
 
     dispatcher = MockDispatcher(
@@ -155,12 +155,12 @@ def test_activity_log_records_dispatch_failure() -> None:
     queue = resolver.get_or_create_queue("s-1", "workflow", "f-1", DispatchMode.IMMEDIATE)
     resolver.add_item(
         queue.queue_id,
-        QueueItem(item_id="bad", queue_id=queue.queue_id, payload={"id": "bad"}, item_state=QueueItemState.READY),
+        QueueItem(item_id="bad", queue_id=queue.queue_id, payload={"item_ref": "bad"}, item_state=QueueItemState.READY),
     )
 
     dispatcher = MockDispatcher(
         repository=repo,
-        transport=MockTransportAdapter(fail_payload_keys={"bad"}, retryable=False),
+        transport=MockTransportAdapter(fail_payload_keys={'{"item_ref": "bad"}'}, retryable=False),
         mapper=IdentityPayloadMapper(),
         retry_policy=MaxAttemptsRetryPolicy(),
         activity_log=activity,
@@ -203,8 +203,8 @@ def test_add_item_assigns_sequence_and_metadata_is_isolated() -> None:
     )
 
     item_metadata = {"k": "v"}
-    first = QueueItem(item_id="1", payload={"id": "1"}, metadata=item_metadata)
-    second = QueueItem(item_id="2", payload={"id": "2"}, metadata={"k": "v2"})
+    first = QueueItem(item_id="1", payload={"value": "1"}, metadata=item_metadata)
+    second = QueueItem(item_id="2", payload={"value": "2"}, metadata={"k": "v2"})
 
     resolver.add_item(queue.queue_id, first)
     resolver.add_item(queue.queue_id, second)
