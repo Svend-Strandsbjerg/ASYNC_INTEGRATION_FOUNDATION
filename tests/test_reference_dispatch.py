@@ -100,7 +100,7 @@ def test_dispatch_item_only_target_dispatchable_item_is_mutated() -> None:
 
 
 def test_retry_waiting_then_dead_letter_when_attempt_budget_exhausted() -> None:
-    transport = MockTransportAdapter(fail_payload_keys={"ts-1"}, retryable=True)
+    transport = MockTransportAdapter(fail_payload_keys={'{"hours": 8, "id": "ts-1"}'}, retryable=True)
     repo, dispatcher = _build_dispatcher(transport)
     queue = build_timesheet_commit_queue()
     queue.items[0].max_attempts = 2

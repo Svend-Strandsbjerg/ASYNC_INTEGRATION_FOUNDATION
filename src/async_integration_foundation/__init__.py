@@ -1,6 +1,6 @@
 """Public runtime API for ASYNC_INTEGRATION_FOUNDATION."""
 
-from .domain.models import Queue, QueueItem, QueueOperation, QueueScheduling, QueueState
+from .domain.models import Queue, QueueItem, QueueOperation, QueueState
 from .queue_builders import (
     QueueId,
     QueueItemId,
@@ -22,7 +22,6 @@ __all__ = [
     "QueueItem",
     "QueueItemId",
     "QueueOperation",
-    "QueueScheduling",
     "QueueState",
     "QueueStatus",
     "build_queue_item",

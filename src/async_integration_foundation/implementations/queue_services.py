@@ -64,11 +64,6 @@ class QueueResolver:
         item.queue_id = queue_id
         if not item.sequence_number:
             item.sequence_number = _next_sequence_number(queue.items)
-        item.payload_type = item.payload_type or f"{queue.queue_type}.action"
-        item.adapter_key = item.adapter_key or "rest_api"
-        item.target_system = item.target_system or "workflow_engine"
-        item.operation = item.operation or "POST"
-        item.idempotency_key = item.idempotency_key or f"idem-{item.sequence_number}"
         queue.items.append(item)
         saved = self.repository.save_queue(queue)
         self._record(saved, QueueActivityType.ITEM_ADDED, item_id=item.item_id)
@@ -151,7 +146,7 @@ def build_queue_snapshot(queue: Queue) -> QueueSnapshot:
                 business_key=item.business_key,
                 external_reference=item.external_reference,
                 idempotency_key=item.idempotency_key,
-                display_name=item.payload.get("id", item.item_id),
+                display_name=item.item_id,
                 state=item.state.value,
                 attempt_count=item.attempt_count,
                 created_at=item.created_at,

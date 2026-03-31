@@ -29,11 +29,7 @@ def test_build_queue_item_contains_canonical_fields() -> None:
     item = build_queue_item(
         queue_id=queue_id,
         item_id=item_id,
-        block_id="block-1",
         operation="update",
-        day="Wednesday",
-        start_time="08:30",
-        end_time="09:30",
         payload={"hours": 1},
         metadata={"source": "poc"},
     )
@@ -41,11 +37,8 @@ def test_build_queue_item_contains_canonical_fields() -> None:
     assert item.id == item_id
     assert item.queue_id == queue_id
     assert item.operation == "update"
-    assert item.scheduling.day_key == "Wednesday"
-    assert item.scheduling.interval == "08:30 - 09:30"
     assert item.payload == {"hours": 1}
     assert item.metadata["source"] == "poc"
-    assert item.metadata["block_id"] == "block-1"
 
 
 def test_camel_case_builder_alias_and_queue_contract() -> None:
@@ -55,16 +48,32 @@ def test_camel_case_builder_alias_and_queue_contract() -> None:
     item = buildQueueItem(
         queue_id=queue_id,
         item_id=item_id,
-        block_id="block-2",
         operation="create",
-        day="Monday",
-        start_time="13:00",
-        end_time="14:30",
-        interval="13:00 - 14:30",
-        payload={"id": "block-2"},
+        payload={"task": "approve"},
     )
 
     queue = Queue(id=queue_id, status=QueueStatus.PAUSED, items=[item])
 
     assert queue.status == QueueStatus.PAUSED
     assert queue.items[0].operation == "create"
+
+
+def test_builder_can_generate_item_id_and_accept_explicit_routing_hints() -> None:
+    queue_id = create_queue_id()
+
+    item = build_queue_item(
+        queue_id=queue_id,
+        payload={"nested": {"any": "shape"}},
+        adapter_key="adapter-x",
+        target_system="system-y",
+        payload_type="custom.type",
+        idempotency_key="idem-custom",
+    )
+
+    assert item.item_id
+    assert item.queue_id == queue_id
+    assert item.payload == {"nested": {"any": "shape"}}
+    assert item.adapter_key == "adapter-x"
+    assert item.target_system == "system-y"
+    assert item.payload_type == "custom.type"
+    assert item.idempotency_key == "idem-custom"
